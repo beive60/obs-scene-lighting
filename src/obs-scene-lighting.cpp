@@ -75,6 +75,11 @@ static constexpr const char *kFilterId = "scene_lighting_filter";
 static constexpr const char *kTextFilterName = "SceneLighting.FilterName";
 
 /**
+ * Localization key for module description.
+ */
+static constexpr const char *kTextDescription = "SceneLighting.Description";
+
+/**
  * Localization key for background source label.
  */
 static constexpr const char *kTextBackgroundSource = "SceneLighting.BackgroundSource";
@@ -228,8 +233,10 @@ enum class SamplingMode : int32_t {
  * Runtime state for the scene lighting filter.
  */
 struct SceneLightingFilter {
-/** OBS source context for this filter. */
-obs_source_t *source = nullptr;
+	/**
+	 * OBS source context for this filter.
+	 */
+	obs_source_t *source = nullptr;
 /** Name of the configured background source. */
 char *background_source_name = nullptr;
 /** Weak reference to configured background source. */
@@ -265,7 +272,7 @@ SamplingMode sampling_method = SamplingMode::Average;
  */
 MODULE_EXPORT const char *obs_module_description(void)
 {
-return "Applies scene lighting from a selected background source to the filtered source.";
+	return obs_module_text(kTextDescription);
 }
 
 /**

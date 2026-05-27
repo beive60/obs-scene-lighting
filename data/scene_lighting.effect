@@ -155,7 +155,7 @@ blend_channel(fg.g, ambient.g, blend_mode),
 blend_channel(fg.b, ambient.b, blend_mode));
 float3 rgb = lerp(fg.rgb, blended, intensity);
 
-	const int max_edge = 64;
+	const int max_edge = 50;
 float em = 0.0;
 float2 normal = 0.0;
 for (int k = 1; k <= max_edge; ++k) {
