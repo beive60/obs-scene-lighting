@@ -237,34 +237,62 @@ struct SceneLightingFilter {
 	 * OBS source context for this filter.
 	 */
 	obs_source_t *source = nullptr;
-/** Name of the configured background source. */
-char *background_source_name = nullptr;
-/** Weak reference to configured background source. */
-obs_weak_source_t *background_source = nullptr;
-/** Loaded graphics effect. */
-gs_effect_t *effect = nullptr;
-/** Offscreen render target for background source. */
-gs_texrender_t *background_render_target = nullptr;
-/** Configured blend mode. */
-BlendMode blend_mode = BlendMode::Screen;
-/** Effect intensity in percent. */
-int32_t intensity_percent = 50;
-/** Sampling blur radius in pixels. */
-int32_t blur_radius = 15;
-/** Edge width in pixels. */
-int32_t edge_width = 10;
-/** Edge alpha threshold in byte units. */
-int32_t edge_threshold = 16;
-/** Whether light wrap is enabled. */
-bool enable_wrap = true;
-/** Whether rim lighting is enabled. */
-bool enable_rim = true;
-/** Rim light direction angle in degrees. */
-int32_t rim_angle = 45;
-/** RGB tint color packed into BGR integer. */
-uint32_t tint_color = 0xFFFFFF;
-/** Sampling method for ambient extraction. */
-SamplingMode sampling_method = SamplingMode::Average;
+	/**
+	 * Name of the configured background source.
+	 */
+	char *background_source_name = nullptr;
+	/**
+	 * Weak reference to configured background source.
+	 */
+	obs_weak_source_t *background_source = nullptr;
+	/**
+	 * Loaded graphics effect.
+	 */
+	gs_effect_t *effect = nullptr;
+	/**
+	 * Offscreen render target for background source.
+	 */
+	gs_texrender_t *background_render_target = nullptr;
+	/**
+	 * Configured blend mode.
+	 */
+	BlendMode blend_mode = BlendMode::Screen;
+	/**
+	 * Effect intensity in percent.
+	 */
+	int32_t intensity_percent = 50;
+	/**
+	 * Sampling blur radius in pixels.
+	 */
+	int32_t blur_radius = 15;
+	/**
+	 * Edge width in pixels.
+	 */
+	int32_t edge_width = 10;
+	/**
+	 * Edge alpha threshold in byte units.
+	 */
+	int32_t edge_threshold = 16;
+	/**
+	 * Whether light wrap is enabled.
+	 */
+	bool enable_wrap = true;
+	/**
+	 * Whether rim lighting is enabled.
+	 */
+	bool enable_rim = true;
+	/**
+	 * Rim light direction angle in degrees.
+	 */
+	int32_t rim_angle = 45;
+	/**
+	 * RGB tint color packed into BGR integer.
+	 */
+	uint32_t tint_color = 0xFFFFFF;
+	/**
+	 * Sampling method for ambient extraction.
+	 */
+	SamplingMode sampling_method = SamplingMode::Average;
 };
 
 /**
