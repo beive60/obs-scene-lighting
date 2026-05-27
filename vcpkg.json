@@ -1,0 +1,6 @@
+{
+  "name": "obs-scene-lighting",
+  "version-string": "0.1.0",
+  "description": "OBS Studio scene lighting filter plugin",
+  "dependencies": []
+}
