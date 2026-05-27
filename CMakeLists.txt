@@ -32,3 +32,4 @@ set_target_properties(obs-scene-lighting PROPERTIES
 
 install(TARGETS obs-scene-lighting LIBRARY DESTINATION obs-plugins/64bit)
 install(FILES data/scene_lighting.effect DESTINATION data/obs-plugins/obs-scene-lighting)
+install(DIRECTORY data/locale/ DESTINATION data/obs-plugins/obs-scene-lighting/locale)

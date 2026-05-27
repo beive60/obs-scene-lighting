@@ -87,6 +87,11 @@ uniform float background_available;
 uniform float2 texel_size;
 
 /**
+ * Maximum edge-width supported by shader loop.
+ */
+uniform float max_edge_width;
+
+/**
  * Blends a channel value with ambient value based on blend mode.
  */
 float blend_channel(float fg, float bg, float mode)
@@ -150,11 +155,11 @@ blend_channel(fg.g, ambient.g, blend_mode),
 blend_channel(fg.b, ambient.b, blend_mode));
 float3 rgb = lerp(fg.rgb, blended, intensity);
 
-const int max_edge = 50;
+	const int max_edge = 64;
 float em = 0.0;
 float2 normal = 0.0;
 for (int k = 1; k <= max_edge; ++k) {
-if ((float)k > edge_width)
+		if ((float)k > min(edge_width, max_edge_width))
 break;
 float2 delta = texel_size * (float)k;
 float a_l = image.Sample(linear_sampler, uv + float2(-delta.x, 0.0)).a;

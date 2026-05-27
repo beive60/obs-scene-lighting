@@ -70,6 +70,101 @@ static constexpr const char *kPropSamplingMethod = "sampling_method";
 static constexpr const char *kFilterId = "scene_lighting_filter";
 
 /**
+ * Localization key for filter display name.
+ */
+static constexpr const char *kTextFilterName = "SceneLighting.FilterName";
+
+/**
+ * Localization key for background source label.
+ */
+static constexpr const char *kTextBackgroundSource = "SceneLighting.BackgroundSource";
+
+/**
+ * Localization key for blend mode label.
+ */
+static constexpr const char *kTextBlendMode = "SceneLighting.BlendMode";
+
+/**
+ * Localization key for intensity label.
+ */
+static constexpr const char *kTextIntensity = "SceneLighting.Intensity";
+
+/**
+ * Localization key for blur radius label.
+ */
+static constexpr const char *kTextBlurRadius = "SceneLighting.BlurRadius";
+
+/**
+ * Localization key for edge width label.
+ */
+static constexpr const char *kTextEdgeWidth = "SceneLighting.EdgeWidth";
+
+/**
+ * Localization key for edge threshold label.
+ */
+static constexpr const char *kTextEdgeThreshold = "SceneLighting.EdgeThreshold";
+
+/**
+ * Localization key for light wrap label.
+ */
+static constexpr const char *kTextLightWrap = "SceneLighting.LightWrap";
+
+/**
+ * Localization key for rim light label.
+ */
+static constexpr const char *kTextRimLight = "SceneLighting.RimLight";
+
+/**
+ * Localization key for rim angle label.
+ */
+static constexpr const char *kTextRimAngle = "SceneLighting.RimAngle";
+
+/**
+ * Localization key for tint color label.
+ */
+static constexpr const char *kTextTintColor = "SceneLighting.TintColor";
+
+/**
+ * Localization key for sampling method label.
+ */
+static constexpr const char *kTextSamplingMethod = "SceneLighting.SamplingMethod";
+
+/**
+ * Localization key for empty source option.
+ */
+static constexpr const char *kTextNone = "SceneLighting.None";
+
+/**
+ * Localization key for multiply blend option.
+ */
+static constexpr const char *kTextBlendMultiply = "SceneLighting.BlendMode.Multiply";
+
+/**
+ * Localization key for screen blend option.
+ */
+static constexpr const char *kTextBlendScreen = "SceneLighting.BlendMode.Screen";
+
+/**
+ * Localization key for overlay blend option.
+ */
+static constexpr const char *kTextBlendOverlay = "SceneLighting.BlendMode.Overlay";
+
+/**
+ * Localization key for add blend option.
+ */
+static constexpr const char *kTextBlendAdd = "SceneLighting.BlendMode.Add";
+
+/**
+ * Localization key for average sampling option.
+ */
+static constexpr const char *kTextSamplingAverage = "SceneLighting.Sampling.Average";
+
+/**
+ * Localization key for center-point sampling option.
+ */
+static constexpr const char *kTextSamplingCenter = "SceneLighting.Sampling.Center";
+
+/**
  * Maximum supported edge width.
  */
 static constexpr float kMaxEdgeWidth = 50.0F;
@@ -97,24 +192,36 @@ static int32_t clamp_int(int32_t value, int32_t min_value, int32_t max_value)
  * Blend mode options aligned with the AviUtl2 script.
  */
 enum class BlendMode : int32_t {
-/** Multiply blending mode. */
-Multiply = 0,
-/** Screen blending mode. */
-Screen = 1,
-/** Overlay blending mode. */
-Overlay = 2,
-/** Additive blending mode. */
-Add = 3,
+	/**
+	 * Multiply blending mode.
+	 */
+	Multiply = 0,
+	/**
+	 * Screen blending mode.
+	 */
+	Screen = 1,
+	/**
+	 * Overlay blending mode.
+	 */
+	Overlay = 2,
+	/**
+	 * Additive blending mode.
+	 */
+	Add = 3,
 };
 
 /**
  * Sampling mode options aligned with the AviUtl2 script.
  */
 enum class SamplingMode : int32_t {
-/** Grid average sampling mode. */
-Average = 0,
-/** Five-point center weighted sampling mode. */
-CenterPoints = 1,
+	/**
+	 * Grid average sampling mode.
+	 */
+	Average = 0,
+	/**
+	 * Five-point center weighted sampling mode.
+	 */
+	CenterPoints = 1,
 };
 
 /**
@@ -226,7 +333,7 @@ return true;
  */
 static const char *scene_lighting_get_name(void *)
 {
-return "Scene Lighting";
+	return obs_module_text(kTextFilterName);
 }
 
 /**
@@ -320,33 +427,42 @@ obs_data_set_default_int(settings, kPropSamplingMethod, static_cast<int>(Samplin
 static obs_properties_t *scene_lighting_properties(void *data)
 {
 OBS_UNUSED_PARAMETER(data);
-obs_properties_t *props = obs_properties_create();
+	obs_properties_t *props = obs_properties_create();
 
-obs_property_t *source_prop = obs_properties_add_list(props, kPropBackgroundSource, "背景 Source",
-OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_STRING);
-obs_property_list_add_string(source_prop, "(none)", "");
-obs_enum_sources(enum_sources_for_property, source_prop);
+	obs_property_t *source_prop = obs_properties_add_list(props, kPropBackgroundSource,
+		obs_module_text(kTextBackgroundSource),
+		OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_STRING);
+	obs_property_list_add_string(source_prop, obs_module_text(kTextNone), "");
+	obs_enum_sources(enum_sources_for_property, source_prop);
 
-obs_property_t *blend_mode = obs_properties_add_list(props, kPropBlendMode, "ブレンドモード",
-OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
-obs_property_list_add_int(blend_mode, "0: 乗算", static_cast<int>(BlendMode::Multiply));
-obs_property_list_add_int(blend_mode, "1: スクリーン", static_cast<int>(BlendMode::Screen));
-obs_property_list_add_int(blend_mode, "2: オーバーレイ", static_cast<int>(BlendMode::Overlay));
-obs_property_list_add_int(blend_mode, "3: 加算", static_cast<int>(BlendMode::Add));
+	obs_property_t *blend_mode = obs_properties_add_list(props, kPropBlendMode,
+		obs_module_text(kTextBlendMode),
+		OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
+	obs_property_list_add_int(blend_mode, obs_module_text(kTextBlendMultiply),
+		static_cast<int>(BlendMode::Multiply));
+	obs_property_list_add_int(blend_mode, obs_module_text(kTextBlendScreen),
+		static_cast<int>(BlendMode::Screen));
+	obs_property_list_add_int(blend_mode, obs_module_text(kTextBlendOverlay),
+		static_cast<int>(BlendMode::Overlay));
+	obs_property_list_add_int(blend_mode, obs_module_text(kTextBlendAdd), static_cast<int>(BlendMode::Add));
 
-obs_properties_add_int_slider(props, kPropIntensity, "強度 (%)", 0, 100, 1);
-obs_properties_add_int_slider(props, kPropBlurRadius, "ブラー半径", 1, 100, 1);
-obs_properties_add_int_slider(props, kPropEdgeWidth, "エッジ幅 (px)", 1, static_cast<int>(kMaxEdgeWidth), 1);
-obs_properties_add_int_slider(props, kPropEdgeThreshold, "エッジ閾値", 1, 255, 1);
-obs_properties_add_bool(props, kPropEnableWrap, "ライトラップ");
-obs_properties_add_bool(props, kPropEnableRim, "リムライト");
-obs_properties_add_int_slider(props, kPropRimAngle, "リムライト角度", -180, 180, 1);
-obs_properties_add_color(props, kPropTintColor, "ベースカラー");
+	obs_properties_add_int_slider(props, kPropIntensity, obs_module_text(kTextIntensity), 0, 100, 1);
+	obs_properties_add_int_slider(props, kPropBlurRadius, obs_module_text(kTextBlurRadius), 1, 100, 1);
+	obs_properties_add_int_slider(props, kPropEdgeWidth, obs_module_text(kTextEdgeWidth), 1,
+		static_cast<int>(kMaxEdgeWidth), 1);
+	obs_properties_add_int_slider(props, kPropEdgeThreshold, obs_module_text(kTextEdgeThreshold), 1, 255, 1);
+	obs_properties_add_bool(props, kPropEnableWrap, obs_module_text(kTextLightWrap));
+	obs_properties_add_bool(props, kPropEnableRim, obs_module_text(kTextRimLight));
+	obs_properties_add_int_slider(props, kPropRimAngle, obs_module_text(kTextRimAngle), -180, 180, 1);
+	obs_properties_add_color(props, kPropTintColor, obs_module_text(kTextTintColor));
 
-obs_property_t *sampling = obs_properties_add_list(props, kPropSamplingMethod, "サンプリング",
-OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
-obs_property_list_add_int(sampling, "0: 平均", static_cast<int>(SamplingMode::Average));
-obs_property_list_add_int(sampling, "1: 中央点", static_cast<int>(SamplingMode::CenterPoints));
+	obs_property_t *sampling = obs_properties_add_list(props, kPropSamplingMethod,
+		obs_module_text(kTextSamplingMethod),
+		OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_INT);
+	obs_property_list_add_int(sampling, obs_module_text(kTextSamplingAverage),
+		static_cast<int>(SamplingMode::Average));
+	obs_property_list_add_int(sampling, obs_module_text(kTextSamplingCenter),
+		static_cast<int>(SamplingMode::CenterPoints));
 
 return props;
 }
@@ -435,10 +551,11 @@ gs_eparam_t *param_enable_wrap = gs_effect_get_param_by_name(filter->effect, "en
 gs_eparam_t *param_enable_rim = gs_effect_get_param_by_name(filter->effect, "enable_rim");
 gs_eparam_t *param_light_dir = gs_effect_get_param_by_name(filter->effect, "light_dir");
 gs_eparam_t *param_tint_color = gs_effect_get_param_by_name(filter->effect, "tint_color");
-gs_eparam_t *param_sampling_method = gs_effect_get_param_by_name(filter->effect, "sampling_method");
-gs_eparam_t *param_blur_radius = gs_effect_get_param_by_name(filter->effect, "blur_radius");
-gs_eparam_t *param_background_available = gs_effect_get_param_by_name(filter->effect, "background_available");
-gs_eparam_t *param_texel_size = gs_effect_get_param_by_name(filter->effect, "texel_size");
+	gs_eparam_t *param_sampling_method = gs_effect_get_param_by_name(filter->effect, "sampling_method");
+	gs_eparam_t *param_blur_radius = gs_effect_get_param_by_name(filter->effect, "blur_radius");
+	gs_eparam_t *param_background_available = gs_effect_get_param_by_name(filter->effect, "background_available");
+	gs_eparam_t *param_texel_size = gs_effect_get_param_by_name(filter->effect, "texel_size");
+	gs_eparam_t *param_max_edge_width = gs_effect_get_param_by_name(filter->effect, "max_edge_width");
 
 if (param_background_tex != nullptr) {
 gs_effect_set_texture(param_background_tex, background_texture);
@@ -477,9 +594,12 @@ gs_effect_set_float(param_blur_radius, static_cast<float>(filter->blur_radius));
 if (param_background_available != nullptr) {
 gs_effect_set_float(param_background_available, background_texture != nullptr ? 1.0F : 0.0F);
 }
-if (param_texel_size != nullptr) {
-gs_effect_set_vec2(param_texel_size, &texel_size);
-}
+	if (param_texel_size != nullptr) {
+		gs_effect_set_vec2(param_texel_size, &texel_size);
+	}
+	if (param_max_edge_width != nullptr) {
+		gs_effect_set_float(param_max_edge_width, kMaxEdgeWidth);
+	}
 
 obs_source_process_filter_end(filter->source, filter->effect, width, height);
 }
