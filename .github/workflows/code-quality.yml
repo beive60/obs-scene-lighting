@@ -28,6 +28,7 @@ jobs:
               with:
                   globs: |
                       README.md
+                                            .github/**/*.md
                       docs/**/*.md
 
     spelling:
@@ -45,6 +46,7 @@ jobs:
                   incremental_files_only: false
                   files: |
                       README.md
+                                            .github/**/*.md
                       cspell.yml
                       project-words.txt
                       .github/workflows/**/*.{yml,yaml}
