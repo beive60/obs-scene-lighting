@@ -1,0 +1,65 @@
+name: Code Quality
+
+on:
+    pull_request:
+    push:
+        branches:
+            - main
+    workflow_dispatch:
+
+permissions:
+    contents: read
+
+concurrency:
+    group: code-quality-${{ github.workflow }}-${{ github.ref }}
+    cancel-in-progress: true
+
+jobs:
+    markdown:
+        name: Markdown
+        runs-on: ubuntu-latest
+        timeout-minutes: 5
+        steps:
+            - name: Check out repository
+              uses: actions/checkout@v5
+
+            - name: Lint Markdown files
+              uses: DavidAnson/markdownlint-cli2-action@v23
+              with:
+                  globs: |
+                      README.md
+                                            .github/**/*.md
+                      docs/**/*.md
+
+    spelling:
+        name: Spelling
+        runs-on: ubuntu-latest
+        timeout-minutes: 5
+        steps:
+            - name: Check out repository
+              uses: actions/checkout@v5
+
+            - name: Run cspell
+              uses: streetsidesoftware/cspell-action@v8
+              with:
+                  config: cspell.yml
+                  incremental_files_only: false
+                  files: |
+                      README.md
+                                            .github/**/*.md
+                      cspell.yml
+                      project-words.txt
+                      .github/workflows/**/*.{yml,yaml}
+
+    workflow-lint:
+        name: Workflow Lint
+        runs-on: ubuntu-latest
+        timeout-minutes: 5
+        steps:
+            - name: Check out repository
+              uses: actions/checkout@v5
+
+            - name: Lint GitHub Actions workflows
+              uses: docker://rhysd/actionlint:1.7.12
+              with:
+                  args: -color
