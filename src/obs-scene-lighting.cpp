@@ -1,5 +1,8 @@
 #include <obs-module.h>
+#include <obs-frontend-api.h>
 #include <graphics/graphics.h>
+#include <graphics/matrix4.h>
+#include <graphics/vec4.h>
 #include <util/platform.h>
 
 #include <cmath>
@@ -296,6 +299,50 @@ struct SceneLightingFilter {
 };
 
 /**
+ * Maps foreground UV coordinates into the rendered background texture.
+ */
+struct SceneUvMapping {
+	bool available = false;
+	uint32_t background_width = 0;
+	uint32_t background_height = 0;
+	struct vec2 origin = {0.0F, 0.0F};
+	struct vec2 axis_x = {1.0F, 0.0F};
+	struct vec2 axis_y = {0.0F, 1.0F};
+};
+
+/**
+ * Tracks recursive scene-item traversal while looking for a source.
+ */
+struct SceneItemSearchContext {
+	obs_source_t *source = nullptr;
+	size_t match_count = 0;
+	struct matrix4 found_transform = {};
+};
+
+/**
+ * Carries the accumulated draw transform through scene traversal.
+ */
+struct SceneTraversalState {
+	SceneItemSearchContext *context = nullptr;
+	struct matrix4 accumulated_transform = {};
+};
+
+enum class SceneSearchStatus {
+	NotFound,
+	Unique,
+	Ambiguous,
+};
+
+/**
+ * Holds a unique scene-root match and its render dimensions.
+ */
+struct RootSceneTransformMatch {
+	struct matrix4 transform = {};
+	uint32_t width = 0;
+	uint32_t height = 0;
+};
+
+/**
  * Returns plugin description shown in OBS UI.
  */
 MODULE_EXPORT const char *obs_module_description(void)
@@ -350,6 +397,241 @@ const float normalize = 1.0F / 255.0F;
 r = static_cast<float>((tint_color >> 16U) & 0xFFU) * normalize;
 g = static_cast<float>((tint_color >> 8U) & 0xFFU) * normalize;
 b = static_cast<float>(tint_color & 0xFFU) * normalize;
+}
+
+/**
+ * Converts a transformed point into normalized UV space for the background texture.
+ */
+static struct vec2 normalize_scene_point(const struct vec4 &point, uint32_t width, uint32_t height)
+{
+	const float reciprocal_w = std::abs(point.w) > 0.00001F ? 1.0F / point.w : 1.0F;
+	return {point.x * reciprocal_w / static_cast<float>(width),
+		point.y * reciprocal_w / static_cast<float>(height)};
+}
+
+/**
+ * Reads the root-scene render size, falling back to the OBS base canvas size.
+ */
+static bool get_root_scene_dimensions(obs_source_t *scene_source, uint32_t &width, uint32_t &height)
+{
+	width = 0;
+	height = 0;
+	if (scene_source != nullptr) {
+		width = obs_source_get_base_width(scene_source);
+		height = obs_source_get_base_height(scene_source);
+	}
+
+	if (width != 0 && height != 0) {
+		return true;
+	}
+
+	obs_video_info video_info = {};
+	if (!obs_get_video_info(&video_info)) {
+		return false;
+	}
+
+	width = video_info.base_width;
+	height = video_info.base_height;
+	return width != 0 && height != 0;
+}
+
+/**
+ * Recursively searches scene items, groups, and nested scenes for a source.
+ */
+static bool find_scene_item_recursive(obs_scene_t *scene, obs_sceneitem_t *item, void *param)
+{
+	UNUSED_PARAMETER(scene);
+	auto *state = static_cast<SceneTraversalState *>(param);
+	struct matrix4 item_transform;
+	obs_sceneitem_get_draw_transform(item, &item_transform);
+
+	struct matrix4 combined_transform;
+	matrix4_mul(&combined_transform, &state->accumulated_transform, &item_transform);
+
+	obs_source_t *item_source = obs_sceneitem_get_source(item);
+	if (item_source == state->context->source) {
+		if (state->context->match_count == 0) {
+			matrix4_copy(&state->context->found_transform, &combined_transform);
+		}
+		state->context->match_count++;
+		if (state->context->match_count > 1) {
+			return false;
+		}
+	}
+
+	SceneTraversalState child_state = *state;
+	matrix4_copy(&child_state.accumulated_transform, &combined_transform);
+
+	if (obs_sceneitem_is_group(item)) {
+		obs_sceneitem_group_enum_items(item, find_scene_item_recursive, &child_state);
+		return state->context->match_count <= 1;
+	}
+
+	if (item_source != nullptr && obs_source_is_scene(item_source)) {
+		obs_scene_t *nested_scene = obs_scene_from_source(item_source);
+		if (nested_scene != nullptr) {
+			obs_scene_enum_items(nested_scene, find_scene_item_recursive, &child_state);
+		}
+	}
+
+	return state->context->match_count <= 1;
+}
+
+/**
+ * Looks for a unique instance of the filtered source inside a root scene.
+ */
+static SceneSearchStatus search_root_scene_transform(obs_source_t *root_scene_source,
+	obs_source_t *target_source, RootSceneTransformMatch &match)
+{
+	if (root_scene_source == nullptr || target_source == nullptr) {
+		return SceneSearchStatus::NotFound;
+	}
+
+	obs_scene_t *root_scene = obs_scene_from_source(root_scene_source);
+	if (root_scene == nullptr) {
+		return SceneSearchStatus::NotFound;
+	}
+
+	SceneItemSearchContext context = {};
+	context.source = target_source;
+	matrix4_identity(&context.found_transform);
+
+	SceneTraversalState state = {};
+	state.context = &context;
+	matrix4_identity(&state.accumulated_transform);
+	obs_scene_enum_items(root_scene, find_scene_item_recursive, &state);
+
+	if (context.match_count == 0) {
+		return SceneSearchStatus::NotFound;
+	}
+	if (context.match_count > 1) {
+		return SceneSearchStatus::Ambiguous;
+	}
+	if (!get_root_scene_dimensions(root_scene_source, match.width, match.height)) {
+		return SceneSearchStatus::NotFound;
+	}
+
+	matrix4_copy(&match.transform, &context.found_transform);
+	return SceneSearchStatus::Unique;
+}
+
+/**
+ * Converts a unique root-scene transform into background UV mapping vectors.
+ */
+static void build_scene_uv_mapping(const RootSceneTransformMatch &match, uint32_t local_width,
+	uint32_t local_height, SceneUvMapping &mapping)
+{
+	struct vec4 local_origin = {0.0F, 0.0F, 0.0F, 1.0F};
+	struct vec4 local_x = {static_cast<float>(local_width), 0.0F, 0.0F, 1.0F};
+	struct vec4 local_y = {0.0F, static_cast<float>(local_height), 0.0F, 1.0F};
+	struct vec4 scene_origin;
+	struct vec4 scene_x;
+	struct vec4 scene_y;
+	vec4_transform(&scene_origin, &local_origin, &match.transform);
+	vec4_transform(&scene_x, &local_x, &match.transform);
+	vec4_transform(&scene_y, &local_y, &match.transform);
+
+	mapping.available = true;
+	mapping.background_width = match.width;
+	mapping.background_height = match.height;
+	mapping.origin = normalize_scene_point(scene_origin, match.width, match.height);
+	const struct vec2 scene_x_uv = normalize_scene_point(scene_x, match.width, match.height);
+	const struct vec2 scene_y_uv = normalize_scene_point(scene_y, match.width, match.height);
+	mapping.axis_x = {scene_x_uv.x - mapping.origin.x, scene_x_uv.y - mapping.origin.y};
+	mapping.axis_y = {scene_y_uv.x - mapping.origin.x, scene_y_uv.y - mapping.origin.y};
+}
+
+/**
+ * Resolves the filtered source into the active scene graph and builds UV mapping.
+ */
+static bool try_resolve_scene_uv_mapping(obs_source_t *source, uint32_t local_width, uint32_t local_height,
+	SceneUvMapping &mapping)
+{
+	if (source == nullptr || local_width == 0 || local_height == 0) {
+		return false;
+	}
+
+	auto release_scene = [](obs_source_t *scene_source) {
+		if (scene_source != nullptr) {
+			obs_source_release(scene_source);
+		}
+	};
+
+	RootSceneTransformMatch match = {};
+	obs_source_t *current_scene = obs_frontend_get_current_scene();
+	const SceneSearchStatus current_status = search_root_scene_transform(current_scene, source, match);
+	if (current_status == SceneSearchStatus::Unique) {
+		build_scene_uv_mapping(match, local_width, local_height, mapping);
+		release_scene(current_scene);
+		return true;
+	}
+	if (current_status == SceneSearchStatus::Ambiguous) {
+		release_scene(current_scene);
+		return false;
+	}
+
+	obs_source_t *preview_scene = nullptr;
+	if (obs_frontend_preview_program_mode_active()) {
+		preview_scene = obs_frontend_get_current_preview_scene();
+		if (preview_scene != current_scene) {
+			const SceneSearchStatus preview_status = search_root_scene_transform(preview_scene, source, match);
+			if (preview_status == SceneSearchStatus::Unique) {
+				build_scene_uv_mapping(match, local_width, local_height, mapping);
+				release_scene(preview_scene);
+				release_scene(current_scene);
+				return true;
+			}
+			if (preview_status == SceneSearchStatus::Ambiguous) {
+				release_scene(preview_scene);
+				release_scene(current_scene);
+				return false;
+			}
+		}
+	}
+
+	bool found_match = false;
+	obs_frontend_source_list scenes = {};
+	obs_frontend_get_scenes(&scenes);
+	for (size_t index = 0; index < scenes.sources.num; ++index) {
+		obs_source_t *scene_source = scenes.sources.array[index];
+		if (scene_source == current_scene || scene_source == preview_scene) {
+			continue;
+		}
+
+		const SceneSearchStatus status = search_root_scene_transform(scene_source, source, match);
+		if (status == SceneSearchStatus::Ambiguous) {
+			obs_frontend_source_list_free(&scenes);
+			if (preview_scene != current_scene) {
+				release_scene(preview_scene);
+			}
+			release_scene(current_scene);
+			return false;
+		}
+		if (status == SceneSearchStatus::Unique) {
+			if (found_match) {
+				obs_frontend_source_list_free(&scenes);
+				if (preview_scene != current_scene) {
+					release_scene(preview_scene);
+				}
+				release_scene(current_scene);
+				return false;
+			}
+			found_match = true;
+		}
+	}
+	obs_frontend_source_list_free(&scenes);
+
+	if (preview_scene != current_scene) {
+		release_scene(preview_scene);
+	}
+	release_scene(current_scene);
+
+	if (!found_match) {
+		return false;
+	}
+
+	build_scene_uv_mapping(match, local_width, local_height, mapping);
+	return true;
 }
 
 /**
@@ -506,7 +788,7 @@ return props;
  * Renders selected background source into intermediate texture.
  */
 static gs_texture_t *render_background(SceneLightingFilter *filter, uint32_t width, uint32_t height,
-	obs_source_t *target)
+	obs_source_t *excluded_source)
 {
 if (filter->background_source == nullptr || filter->background_render_target == nullptr || width == 0 ||
     height == 0) {
@@ -514,7 +796,7 @@ return nullptr;
 }
 
 	obs_source_t *background = obs_weak_source_get_source(filter->background_source);
-	if (background == nullptr || background == target) {
+	if (background == nullptr || background == excluded_source) {
 		if (background != nullptr) {
 			obs_source_release(background);
 		}
@@ -547,6 +829,7 @@ return gs_texrender_get_texture(filter->background_render_target);
 static void scene_lighting_render(void *data, gs_effect_t *)
 {
 auto *filter = static_cast<SceneLightingFilter *>(data);
+	obs_source_t *parent = obs_filter_get_parent(filter->source);
 obs_source_t *target = obs_filter_get_target(filter->source);
 if (target == nullptr || filter->effect == nullptr) {
 obs_source_skip_video_filter(filter->source);
@@ -560,7 +843,12 @@ obs_source_skip_video_filter(filter->source);
 return;
 }
 
-gs_texture_t *background_texture = render_background(filter, width, height, target);
+	SceneUvMapping scene_mapping = {};
+	try_resolve_scene_uv_mapping(parent, width, height, scene_mapping);
+	const uint32_t background_width = scene_mapping.available ? scene_mapping.background_width : width;
+	const uint32_t background_height = scene_mapping.available ? scene_mapping.background_height : height;
+	gs_texture_t *background_texture =
+		render_background(filter, background_width, background_height, parent != nullptr ? parent : target);
 
 if (!obs_source_process_filter_begin(filter->source, GS_RGBA, OBS_ALLOW_DIRECT_RENDERING)) {
 return;
@@ -570,7 +858,10 @@ const float intensity = static_cast<float>(filter->intensity_percent) / 100.0F;
 const float edge_threshold = static_cast<float>(filter->edge_threshold) / 255.0F;
 	const float rim_angle_rad = static_cast<float>(filter->rim_angle) * (kPi / 180.0F);
 	const struct vec2 light_dir = {std::cos(rim_angle_rad), -std::sin(rim_angle_rad)};
-	const struct vec2 texel_size = {1.0F / static_cast<float>(width), 1.0F / static_cast<float>(height)};
+	const struct vec2 foreground_texel_size = {1.0F / static_cast<float>(width),
+		1.0F / static_cast<float>(height)};
+	const struct vec2 background_texel_size = {1.0F / static_cast<float>(background_width),
+		1.0F / static_cast<float>(background_height)};
 float tint_r = 1.0F;
 float tint_g = 1.0F;
 float tint_b = 1.0F;
@@ -589,7 +880,15 @@ gs_eparam_t *param_tint_color = gs_effect_get_param_by_name(filter->effect, "tin
 	gs_eparam_t *param_sampling_method = gs_effect_get_param_by_name(filter->effect, "sampling_method");
 	gs_eparam_t *param_blur_radius = gs_effect_get_param_by_name(filter->effect, "blur_radius");
 	gs_eparam_t *param_background_available = gs_effect_get_param_by_name(filter->effect, "background_available");
-	gs_eparam_t *param_texel_size = gs_effect_get_param_by_name(filter->effect, "texel_size");
+	gs_eparam_t *param_foreground_texel_size = gs_effect_get_param_by_name(filter->effect,
+		"foreground_texel_size");
+	gs_eparam_t *param_background_texel_size = gs_effect_get_param_by_name(filter->effect,
+		"background_texel_size");
+	gs_eparam_t *param_scene_uv_origin = gs_effect_get_param_by_name(filter->effect, "scene_uv_origin");
+	gs_eparam_t *param_scene_uv_x = gs_effect_get_param_by_name(filter->effect, "scene_uv_x");
+	gs_eparam_t *param_scene_uv_y = gs_effect_get_param_by_name(filter->effect, "scene_uv_y");
+	gs_eparam_t *param_scene_mapping_available = gs_effect_get_param_by_name(filter->effect,
+		"scene_mapping_available");
 	gs_eparam_t *param_max_edge_width = gs_effect_get_param_by_name(filter->effect, "max_edge_width");
 
 if (param_background_tex != nullptr) {
@@ -629,8 +928,23 @@ gs_effect_set_float(param_blur_radius, static_cast<float>(filter->blur_radius));
 if (param_background_available != nullptr) {
 gs_effect_set_float(param_background_available, background_texture != nullptr ? 1.0F : 0.0F);
 }
-	if (param_texel_size != nullptr) {
-		gs_effect_set_vec2(param_texel_size, &texel_size);
+	if (param_foreground_texel_size != nullptr) {
+		gs_effect_set_vec2(param_foreground_texel_size, &foreground_texel_size);
+	}
+	if (param_background_texel_size != nullptr) {
+		gs_effect_set_vec2(param_background_texel_size, &background_texel_size);
+	}
+	if (param_scene_uv_origin != nullptr) {
+		gs_effect_set_vec2(param_scene_uv_origin, &scene_mapping.origin);
+	}
+	if (param_scene_uv_x != nullptr) {
+		gs_effect_set_vec2(param_scene_uv_x, &scene_mapping.axis_x);
+	}
+	if (param_scene_uv_y != nullptr) {
+		gs_effect_set_vec2(param_scene_uv_y, &scene_mapping.axis_y);
+	}
+	if (param_scene_mapping_available != nullptr) {
+		gs_effect_set_float(param_scene_mapping_available, scene_mapping.available ? 1.0F : 0.0F);
 	}
 	if (param_max_edge_width != nullptr) {
 		gs_effect_set_float(param_max_edge_width, kMaxEdgeWidth);

@@ -99,7 +99,32 @@ uniform float background_available;
 /**
  * Foreground texel size.
  */
-uniform float2 texel_size;
+uniform float2 foreground_texel_size;
+
+/**
+ * Background texel size.
+ */
+uniform float2 background_texel_size;
+
+/**
+ * Scene-space UV mapping origin for the filtered source.
+ */
+uniform float2 scene_uv_origin;
+
+/**
+ * Scene-space UV mapping X axis for the filtered source.
+ */
+uniform float2 scene_uv_x;
+
+/**
+ * Scene-space UV mapping Y axis for the filtered source.
+ */
+uniform float2 scene_uv_y;
+
+/**
+ * Flag indicating whether scene-space mapping was resolved.
+ */
+uniform float scene_mapping_available;
 
 /**
  * Maximum edge-width supported by shader loop.
@@ -128,33 +153,42 @@ float3 sample_environment(float2 uv)
     if (background_available < 0.5)
         return float3(0.5, 0.5, 0.5);
 
+    float2 background_uv = uv;
+    if (scene_mapping_available > 0.5)
+        background_uv = scene_uv_origin + scene_uv_x * uv.x + scene_uv_y * uv.y;
+
     if (sampling_method > 0.5) {
         float3 sum = 0.0;
-        sum += background_tex.Sample(background_sampler, float2(0.25, 0.25)).rgb;
-        sum += background_tex.Sample(background_sampler, float2(0.75, 0.25)).rgb;
-        sum += background_tex.Sample(background_sampler, float2(0.5, 0.5)).rgb;
-        sum += background_tex.Sample(background_sampler, float2(0.25, 0.75)).rgb;
-        sum += background_tex.Sample(background_sampler, float2(0.75, 0.75)).rgb;
+        sum += background_tex.Sample(background_sampler,
+            scene_mapping_available > 0.5 ? (scene_uv_origin + scene_uv_x * 0.25 + scene_uv_y * 0.25) : float2(0.25, 0.25)).rgb;
+        sum += background_tex.Sample(background_sampler,
+            scene_mapping_available > 0.5 ? (scene_uv_origin + scene_uv_x * 0.75 + scene_uv_y * 0.25) : float2(0.75, 0.25)).rgb;
+        sum += background_tex.Sample(background_sampler,
+            scene_mapping_available > 0.5 ? (scene_uv_origin + scene_uv_x * 0.5 + scene_uv_y * 0.5) : float2(0.5, 0.5)).rgb;
+        sum += background_tex.Sample(background_sampler,
+            scene_mapping_available > 0.5 ? (scene_uv_origin + scene_uv_x * 0.25 + scene_uv_y * 0.75) : float2(0.25, 0.75)).rgb;
+        sum += background_tex.Sample(background_sampler,
+            scene_mapping_available > 0.5 ? (scene_uv_origin + scene_uv_x * 0.75 + scene_uv_y * 0.75) : float2(0.75, 0.75)).rgb;
         return sum / 5.0;
     }
 
-    float2 sample_step = max(texel_size * max(1.0, blur_radius), texel_size);
+    float2 sample_step = max(background_texel_size * max(1.0, blur_radius), background_texel_size);
     float3 sum = 0.0;
-    sum += background_tex.Sample(background_sampler, uv + sample_step * float2(-1.0, -1.0)).rgb;
-    sum += background_tex.Sample(background_sampler, uv + sample_step * float2(0.0, -1.0)).rgb;
-    sum += background_tex.Sample(background_sampler, uv + sample_step * float2(1.0, -1.0)).rgb;
-    sum += background_tex.Sample(background_sampler, uv + sample_step * float2(-1.0, 0.0)).rgb;
-    sum += background_tex.Sample(background_sampler, uv).rgb;
-    sum += background_tex.Sample(background_sampler, uv + sample_step * float2(1.0, 0.0)).rgb;
-    sum += background_tex.Sample(background_sampler, uv + sample_step * float2(-1.0, 1.0)).rgb;
-    sum += background_tex.Sample(background_sampler, uv + sample_step * float2(0.0, 1.0)).rgb;
-    sum += background_tex.Sample(background_sampler, uv + sample_step * float2(1.0, 1.0)).rgb;
+    sum += background_tex.Sample(background_sampler, background_uv + sample_step * float2(-1.0, -1.0)).rgb;
+    sum += background_tex.Sample(background_sampler, background_uv + sample_step * float2(0.0, -1.0)).rgb;
+    sum += background_tex.Sample(background_sampler, background_uv + sample_step * float2(1.0, -1.0)).rgb;
+    sum += background_tex.Sample(background_sampler, background_uv + sample_step * float2(-1.0, 0.0)).rgb;
+    sum += background_tex.Sample(background_sampler, background_uv).rgb;
+    sum += background_tex.Sample(background_sampler, background_uv + sample_step * float2(1.0, 0.0)).rgb;
+    sum += background_tex.Sample(background_sampler, background_uv + sample_step * float2(-1.0, 1.0)).rgb;
+    sum += background_tex.Sample(background_sampler, background_uv + sample_step * float2(0.0, 1.0)).rgb;
+    sum += background_tex.Sample(background_sampler, background_uv + sample_step * float2(1.0, 1.0)).rgb;
     return sum / 9.0;
 }
 
 float sample_foreground_alpha(float2 uv, float2 pixel_offset)
 {
-    float2 image_size = max(float2(1.0, 1.0), 1.0 / texel_size);
+    float2 image_size = max(float2(1.0, 1.0), 1.0 / foreground_texel_size);
     float2 pixel = clamp(floor(uv * image_size + pixel_offset), float2(0.0, 0.0), image_size - 1.0);
     return image.Load(int3(pixel, 0)).a;
 }

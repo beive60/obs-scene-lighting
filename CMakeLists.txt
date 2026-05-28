@@ -27,7 +27,8 @@ add_library(${CMAKE_PROJECT_NAME} MODULE)
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/obs-scene-lighting.cpp)
 
 find_package(libobs REQUIRED)
-target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE OBS::libobs)
+find_package(obs-frontend-api REQUIRED)
+target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE OBS::libobs OBS::obs-frontend-api)
 
 target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE src)
 
