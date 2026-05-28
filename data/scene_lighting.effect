@@ -14,31 +14,31 @@ uniform texture2d background_tex;
  * Foreground texture sampler.
  */
 sampler_state linear_sampler {
-Filter = Linear;
-AddressU = Clamp;
-AddressV = Clamp;
+    Filter = Linear;
+    AddressU = Clamp;
+    AddressV = Clamp;
 };
 
 /**
  * Background texture sampler.
  */
 sampler_state background_sampler {
-Filter = Linear;
-AddressU = Clamp;
-AddressV = Clamp;
+    Filter = Linear;
+    AddressU = Clamp;
+    AddressV = Clamp;
 };
 
 struct VertData {
-float4 pos : POSITION;
-float2 uv : TEXCOORD0;
+    float4 pos : POSITION;
+    float2 uv : TEXCOORD0;
 };
 
 VertData VSDefault(VertData v_in)
 {
-VertData vert_out;
-vert_out.pos = mul(float4(v_in.pos.xyz, 1.0), ViewProj);
-vert_out.uv = v_in.uv;
-return vert_out;
+    VertData vert_out;
+    vert_out.pos = mul(float4(v_in.pos.xyz, 1.0), ViewProj);
+    vert_out.uv = v_in.uv;
+    return vert_out;
 }
 
 /**
@@ -111,13 +111,13 @@ uniform float max_edge_width;
  */
 float blend_channel(float fg, float bg, float mode)
 {
-if (mode < 0.5)
-return fg * bg;
-if (mode < 1.5)
-return 1.0 - (1.0 - fg) * (1.0 - bg);
-if (mode < 2.5)
-return (fg < 0.5) ? (2.0 * fg * bg) : (1.0 - 2.0 * (1.0 - fg) * (1.0 - bg));
-return min(fg + bg, 1.0);
+    if (mode < 0.5)
+        return fg * bg;
+    if (mode < 1.5)
+        return 1.0 - (1.0 - fg) * (1.0 - bg);
+    if (mode < 2.5)
+        return (fg < 0.5) ? (2.0 * fg * bg) : (1.0 - 2.0 * (1.0 - fg) * (1.0 - bg));
+    return min(fg + bg, 1.0);
 }
 
 /**
@@ -125,38 +125,38 @@ return min(fg + bg, 1.0);
  */
 float3 sample_environment(float2 uv)
 {
-if (background_available < 0.5)
-return float3(0.5, 0.5, 0.5);
+    if (background_available < 0.5)
+        return float3(0.5, 0.5, 0.5);
 
-if (sampling_method > 0.5) {
-float3 sum = 0.0;
-sum += background_tex.Sample(background_sampler, float2(0.25, 0.25)).rgb;
-sum += background_tex.Sample(background_sampler, float2(0.75, 0.25)).rgb;
-sum += background_tex.Sample(background_sampler, float2(0.5, 0.5)).rgb;
-sum += background_tex.Sample(background_sampler, float2(0.25, 0.75)).rgb;
-sum += background_tex.Sample(background_sampler, float2(0.75, 0.75)).rgb;
-return sum / 5.0;
-}
+    if (sampling_method > 0.5) {
+        float3 sum = 0.0;
+        sum += background_tex.Sample(background_sampler, float2(0.25, 0.25)).rgb;
+        sum += background_tex.Sample(background_sampler, float2(0.75, 0.25)).rgb;
+        sum += background_tex.Sample(background_sampler, float2(0.5, 0.5)).rgb;
+        sum += background_tex.Sample(background_sampler, float2(0.25, 0.75)).rgb;
+        sum += background_tex.Sample(background_sampler, float2(0.75, 0.75)).rgb;
+        return sum / 5.0;
+    }
 
-float2 sample_step = max(texel_size * max(1.0, blur_radius), texel_size);
-float3 sum = 0.0;
-sum += background_tex.Sample(background_sampler, uv + sample_step * float2(-1.0, -1.0)).rgb;
-sum += background_tex.Sample(background_sampler, uv + sample_step * float2(0.0, -1.0)).rgb;
-sum += background_tex.Sample(background_sampler, uv + sample_step * float2(1.0, -1.0)).rgb;
-sum += background_tex.Sample(background_sampler, uv + sample_step * float2(-1.0, 0.0)).rgb;
-sum += background_tex.Sample(background_sampler, uv).rgb;
-sum += background_tex.Sample(background_sampler, uv + sample_step * float2(1.0, 0.0)).rgb;
-sum += background_tex.Sample(background_sampler, uv + sample_step * float2(-1.0, 1.0)).rgb;
-sum += background_tex.Sample(background_sampler, uv + sample_step * float2(0.0, 1.0)).rgb;
-sum += background_tex.Sample(background_sampler, uv + sample_step * float2(1.0, 1.0)).rgb;
-return sum / 9.0;
+    float2 sample_step = max(texel_size * max(1.0, blur_radius), texel_size);
+    float3 sum = 0.0;
+    sum += background_tex.Sample(background_sampler, uv + sample_step * float2(-1.0, -1.0)).rgb;
+    sum += background_tex.Sample(background_sampler, uv + sample_step * float2(0.0, -1.0)).rgb;
+    sum += background_tex.Sample(background_sampler, uv + sample_step * float2(1.0, -1.0)).rgb;
+    sum += background_tex.Sample(background_sampler, uv + sample_step * float2(-1.0, 0.0)).rgb;
+    sum += background_tex.Sample(background_sampler, uv).rgb;
+    sum += background_tex.Sample(background_sampler, uv + sample_step * float2(1.0, 0.0)).rgb;
+    sum += background_tex.Sample(background_sampler, uv + sample_step * float2(-1.0, 1.0)).rgb;
+    sum += background_tex.Sample(background_sampler, uv + sample_step * float2(0.0, 1.0)).rgb;
+    sum += background_tex.Sample(background_sampler, uv + sample_step * float2(1.0, 1.0)).rgb;
+    return sum / 9.0;
 }
 
 float sample_foreground_alpha(float2 uv, float2 pixel_offset)
 {
-float2 image_size = max(float2(1.0, 1.0), 1.0 / texel_size);
-float2 pixel = clamp(floor(uv * image_size + pixel_offset), float2(0.0, 0.0), image_size - 1.0);
-return image.Load(int3(pixel, 0)).a;
+    float2 image_size = max(float2(1.0, 1.0), 1.0 / texel_size);
+    float2 pixel = clamp(floor(uv * image_size + pixel_offset), float2(0.0, 0.0), image_size - 1.0);
+    return image.Load(int3(pixel, 0)).a;
 }
 
 /**
@@ -164,60 +164,60 @@ return image.Load(int3(pixel, 0)).a;
  */
 float4 scene_lighting_pixel_shader(VertData v_in) : TARGET
 {
-float2 uv = v_in.uv;
-float4 fg = image.Sample(linear_sampler, uv);
-if (fg.a < edge_threshold)
-return fg;
+    float2 uv = v_in.uv;
+    float4 fg = image.Sample(linear_sampler, uv);
+    if (fg.a < edge_threshold)
+        return fg;
 
-float3 ambient = sample_environment(uv) * tint_color;
+    float3 ambient = sample_environment(uv) * tint_color;
 
-float3 blended = float3(
-blend_channel(fg.r, ambient.r, blend_mode),
-blend_channel(fg.g, ambient.g, blend_mode),
-blend_channel(fg.b, ambient.b, blend_mode));
-float3 rgb = lerp(fg.rgb, blended, intensity);
+    float3 blended = float3(
+        blend_channel(fg.r, ambient.r, blend_mode),
+        blend_channel(fg.g, ambient.g, blend_mode),
+        blend_channel(fg.b, ambient.b, blend_mode));
+    float3 rgb = lerp(fg.rgb, blended, intensity);
 
-	const int max_edge = (int)max_edge_width;
-float em = 0.0;
-float2 normal = 0.0;
-for (int k = 1; k <= max_edge; ++k) {
-		if ((float)k > edge_width)
-break;
-float2 pixel_offset = float2((float)k, (float)k);
-float a_l = sample_foreground_alpha(uv, float2(-pixel_offset.x, 0.0));
-float a_r = sample_foreground_alpha(uv, float2(pixel_offset.x, 0.0));
-float a_u = sample_foreground_alpha(uv, float2(0.0, -pixel_offset.y));
-float a_d = sample_foreground_alpha(uv, float2(0.0, pixel_offset.y));
-if (min(min(a_l, a_r), min(a_u, a_d)) < edge_threshold) {
-em = 1.0 - ((float)k - 1.0) / max(edge_width, 1.0);
-normal = float2(step(edge_threshold, a_r) - step(edge_threshold, a_l),
-step(edge_threshold, a_d) - step(edge_threshold, a_u));
-break;
-}
-}
+    const int max_edge = (int)max_edge_width;
+    float em = 0.0;
+    float2 normal = 0.0;
+    for (int k = 1; k <= max_edge; ++k) {
+        if ((float)k > edge_width)
+            break;
+        float2 pixel_offset = float2((float)k, (float)k);
+        float a_l = sample_foreground_alpha(uv, float2(-pixel_offset.x, 0.0));
+        float a_r = sample_foreground_alpha(uv, float2(pixel_offset.x, 0.0));
+        float a_u = sample_foreground_alpha(uv, float2(0.0, -pixel_offset.y));
+        float a_d = sample_foreground_alpha(uv, float2(0.0, pixel_offset.y));
+        if (min(min(a_l, a_r), min(a_u, a_d)) < edge_threshold) {
+            em = 1.0 - ((float)k - 1.0) / max(edge_width, 1.0);
+            normal = float2(step(edge_threshold, a_r) - step(edge_threshold, a_l),
+                step(edge_threshold, a_d) - step(edge_threshold, a_u));
+            break;
+        }
+    }
 
-if (em > 0.0) {
-if (enable_wrap > 0.5)
-rgb = saturate(rgb + ambient * em * intensity * 0.5);
+    if (em > 0.0) {
+        if (enable_wrap > 0.5)
+            rgb = saturate(rgb + ambient * em * intensity * 0.5);
 
-if (enable_rim > 0.5) {
-float len_n = length(normal);
-if (len_n > 0.001) {
-float2 nrm = normal / len_n;
-float rim = max(0.0, dot(nrm, light_dir));
-rgb = saturate(rgb + ambient * rim * em * intensity * 0.6);
-}
-}
-}
+        if (enable_rim > 0.5) {
+            float len_n = length(normal);
+            if (len_n > 0.001) {
+                float2 nrm = normal / len_n;
+                float rim = max(0.0, dot(nrm, light_dir));
+                rgb = saturate(rgb + ambient * rim * em * intensity * 0.6);
+            }
+        }
+    }
 
-return float4(rgb, fg.a);
+    return float4(rgb, fg.a);
 }
 
 technique Draw
 {
-pass
-{
-vertex_shader = VSDefault(v_in);
-pixel_shader = scene_lighting_pixel_shader(v_in);
-}
+    pass
+    {
+        vertex_shader = VSDefault(v_in);
+        pixel_shader = scene_lighting_pixel_shader(v_in);
+    }
 }
