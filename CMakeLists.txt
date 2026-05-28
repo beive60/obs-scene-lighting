@@ -1,12 +1,19 @@
-cmake_minimum_required(VERSION 3.24)
+cmake_minimum_required(VERSION 3.28...3.30)
 
-project(obs-scene-lighting VERSION 0.1.0 LANGUAGES CXX)
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/common/bootstrap.cmake" NO_POLICY_SCOPE)
+
+project(${_name} VERSION ${_version} LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+option(OBS_BOOTSTRAP_DEPS "Automatically download and bootstrap OBS build dependencies" ON)
 option(ENABLE_CLANG_TIDY "Enable clang-tidy checks" ON)
+
+include(compilerconfig)
+include(defaults)
+include(helpers)
 
 if(ENABLE_CLANG_TIDY)
   find_program(CLANG_TIDY_EXE NAMES clang-tidy)
@@ -15,21 +22,13 @@ if(ENABLE_CLANG_TIDY)
   endif()
 endif()
 
+add_library(${CMAKE_PROJECT_NAME} MODULE)
+
+target_sources(${CMAKE_PROJECT_NAME} PRIVATE src/obs-scene-lighting.cpp)
+
 find_package(libobs REQUIRED)
+target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE OBS::libobs)
 
-add_library(obs-scene-lighting MODULE
-  src/obs-scene-lighting.cpp
-)
+target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE src)
 
-target_link_libraries(obs-scene-lighting PRIVATE OBS::libobs)
-
-target_include_directories(obs-scene-lighting PRIVATE src)
-
-set_target_properties(obs-scene-lighting PROPERTIES
-  PREFIX ""
-  OUTPUT_NAME "obs-scene-lighting"
-)
-
-install(TARGETS obs-scene-lighting LIBRARY DESTINATION obs-plugins/64bit)
-install(FILES data/scene_lighting.effect DESTINATION data/obs-plugins/obs-scene-lighting)
-install(DIRECTORY data/locale/ DESTINATION data/obs-plugins/obs-scene-lighting/locale)
+set_target_properties_plugin(${CMAKE_PROJECT_NAME} PROPERTIES OUTPUT_NAME ${_name})

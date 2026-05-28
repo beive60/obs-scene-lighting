@@ -1,6 +1,8 @@
 /**
  * Scene lighting effect for OBS foreground sources.
  */
+uniform float4x4 ViewProj;
+
 uniform texture2d image;
 
 /**
@@ -25,6 +27,19 @@ Filter = Linear;
 AddressU = Clamp;
 AddressV = Clamp;
 };
+
+struct VertData {
+float4 pos : POSITION;
+float2 uv : TEXCOORD0;
+};
+
+VertData VSDefault(VertData v_in)
+{
+VertData vert_out;
+vert_out.pos = mul(float4(v_in.pos.xyz, 1.0), ViewProj);
+vert_out.uv = v_in.uv;
+return vert_out;
+}
 
 /**
  * Effect strength from 0.0 to 1.0.
@@ -137,6 +152,13 @@ sum += background_tex.Sample(background_sampler, uv + sample_step * float2(1.0, 
 return sum / 9.0;
 }
 
+float sample_foreground_alpha(float2 uv, float2 pixel_offset)
+{
+float2 image_size = max(float2(1.0, 1.0), 1.0 / texel_size);
+float2 pixel = clamp(floor(uv * image_size + pixel_offset), float2(0.0, 0.0), image_size - 1.0);
+return image.Load(int3(pixel, 0)).a;
+}
+
 /**
  * Main pixel shader that applies scene lighting.
  */
@@ -161,11 +183,11 @@ float2 normal = 0.0;
 for (int k = 1; k <= max_edge; ++k) {
 		if ((float)k > edge_width)
 break;
-float2 delta = texel_size * (float)k;
-float a_l = image.Sample(linear_sampler, uv + float2(-delta.x, 0.0)).a;
-float a_r = image.Sample(linear_sampler, uv + float2(delta.x, 0.0)).a;
-float a_u = image.Sample(linear_sampler, uv + float2(0.0, -delta.y)).a;
-float a_d = image.Sample(linear_sampler, uv + float2(0.0, delta.y)).a;
+float2 pixel_offset = float2((float)k, (float)k);
+float a_l = sample_foreground_alpha(uv, float2(-pixel_offset.x, 0.0));
+float a_r = sample_foreground_alpha(uv, float2(pixel_offset.x, 0.0));
+float a_u = sample_foreground_alpha(uv, float2(0.0, -pixel_offset.y));
+float a_d = sample_foreground_alpha(uv, float2(0.0, pixel_offset.y));
 if (min(min(a_l, a_r), min(a_u, a_d)) < edge_threshold) {
 em = 1.0 - ((float)k - 1.0) / max(edge_width, 1.0);
 normal = float2(step(edge_threshold, a_r) - step(edge_threshold, a_l),
@@ -195,7 +217,7 @@ technique Draw
 {
 pass
 {
-vertex_shader = OBS_DefaultVertexShader(v_in);
+vertex_shader = VSDefault(v_in);
 pixel_shader = scene_lighting_pixel_shader(v_in);
 }
 }

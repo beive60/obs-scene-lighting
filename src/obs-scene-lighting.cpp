@@ -461,7 +461,7 @@ obs_data_set_default_int(settings, kPropSamplingMethod, static_cast<int>(Samplin
  */
 static obs_properties_t *scene_lighting_properties(void *data)
 {
-OBS_UNUSED_PARAMETER(data);
+	UNUSED_PARAMETER(data);
 	obs_properties_t *props = obs_properties_create();
 
 	obs_property_t *source_prop = obs_properties_add_list(props, kPropBackgroundSource,
