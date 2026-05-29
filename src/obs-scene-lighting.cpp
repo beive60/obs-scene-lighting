@@ -299,7 +299,7 @@ struct SceneLightingFilter {
 };
 
 /**
- * Maps foreground UV coordinates into the rendered background texture.
+ * Maps source UV coordinates into the root-scene UV space.
  */
 struct SceneUvMapping {
 	bool available = false;
@@ -311,12 +311,24 @@ struct SceneUvMapping {
 };
 
 /**
+ * Represents a background scene item's oriented box in scene pixels.
+ */
+struct BackgroundSceneBox {
+	bool available = false;
+	struct vec2 center = {0.0F, 0.0F};
+	struct vec2 axis_x = {1.0F, 0.0F};
+	struct vec2 axis_y = {0.0F, 1.0F};
+	struct vec2 half_extent = {0.0F, 0.0F};
+};
+
+/**
  * Tracks recursive scene-item traversal while looking for a source.
  */
 struct SceneItemSearchContext {
 	obs_source_t *source = nullptr;
 	size_t match_count = 0;
-	struct matrix4 found_transform = {};
+	struct matrix4 found_draw_transform = {};
+	struct matrix4 found_box_transform = {};
 };
 
 /**
@@ -336,8 +348,9 @@ enum class SceneSearchStatus {
 /**
  * Holds a unique scene-root match and its render dimensions.
  */
-struct RootSceneTransformMatch {
-	struct matrix4 transform = {};
+struct RootSceneItemMatch {
+	struct matrix4 draw_transform = {};
+	struct matrix4 box_transform = {};
 	uint32_t width = 0;
 	uint32_t height = 0;
 };
@@ -410,6 +423,18 @@ static struct vec2 normalize_scene_point(const struct vec4 &point, uint32_t widt
 }
 
 /**
+ * Converts a transformed point into scene pixel coordinates.
+ */
+static struct vec2 project_scene_point(const struct matrix4 &transform, float x, float y)
+{
+	struct vec4 point = {x, y, 0.0F, 1.0F};
+	struct vec4 projected;
+	vec4_transform(&projected, &point, &transform);
+	const float reciprocal_w = std::abs(projected.w) > 0.00001F ? 1.0F / projected.w : 1.0F;
+	return {projected.x * reciprocal_w, projected.y * reciprocal_w};
+}
+
+/**
  * Reads the root-scene render size, falling back to the OBS base canvas size.
  */
 static bool get_root_scene_dimensions(obs_source_t *scene_source, uint32_t &width, uint32_t &height)
@@ -443,15 +468,20 @@ static bool find_scene_item_recursive(obs_scene_t *scene, obs_sceneitem_t *item,
 	UNUSED_PARAMETER(scene);
 	auto *state = static_cast<SceneTraversalState *>(param);
 	struct matrix4 item_transform;
+	struct matrix4 item_box_transform;
 	obs_sceneitem_get_draw_transform(item, &item_transform);
+	obs_sceneitem_get_box_transform(item, &item_box_transform);
 
 	struct matrix4 combined_transform;
+	struct matrix4 combined_box_transform;
 	matrix4_mul(&combined_transform, &state->accumulated_transform, &item_transform);
+	matrix4_mul(&combined_box_transform, &state->accumulated_transform, &item_box_transform);
 
 	obs_source_t *item_source = obs_sceneitem_get_source(item);
 	if (item_source == state->context->source) {
 		if (state->context->match_count == 0) {
-			matrix4_copy(&state->context->found_transform, &combined_transform);
+			matrix4_copy(&state->context->found_draw_transform, &combined_transform);
+			matrix4_copy(&state->context->found_box_transform, &combined_box_transform);
 		}
 		state->context->match_count++;
 		if (state->context->match_count > 1) {
@@ -480,8 +510,8 @@ static bool find_scene_item_recursive(obs_scene_t *scene, obs_sceneitem_t *item,
 /**
  * Looks for a unique instance of the filtered source inside a root scene.
  */
-static SceneSearchStatus search_root_scene_transform(obs_source_t *root_scene_source,
-	obs_source_t *target_source, RootSceneTransformMatch &match)
+static SceneSearchStatus search_root_scene_item(obs_source_t *root_scene_source,
+	obs_source_t *target_source, RootSceneItemMatch &match)
 {
 	if (root_scene_source == nullptr || target_source == nullptr) {
 		return SceneSearchStatus::NotFound;
@@ -494,7 +524,8 @@ static SceneSearchStatus search_root_scene_transform(obs_source_t *root_scene_so
 
 	SceneItemSearchContext context = {};
 	context.source = target_source;
-	matrix4_identity(&context.found_transform);
+	matrix4_identity(&context.found_draw_transform);
+	matrix4_identity(&context.found_box_transform);
 
 	SceneTraversalState state = {};
 	state.context = &context;
@@ -511,14 +542,15 @@ static SceneSearchStatus search_root_scene_transform(obs_source_t *root_scene_so
 		return SceneSearchStatus::NotFound;
 	}
 
-	matrix4_copy(&match.transform, &context.found_transform);
+	matrix4_copy(&match.draw_transform, &context.found_draw_transform);
+	matrix4_copy(&match.box_transform, &context.found_box_transform);
 	return SceneSearchStatus::Unique;
 }
 
 /**
  * Converts a unique root-scene transform into background UV mapping vectors.
  */
-static void build_scene_uv_mapping(const RootSceneTransformMatch &match, uint32_t local_width,
+static void build_scene_uv_mapping(const RootSceneItemMatch &match, uint32_t local_width,
 	uint32_t local_height, SceneUvMapping &mapping)
 {
 	struct vec4 local_origin = {0.0F, 0.0F, 0.0F, 1.0F};
@@ -527,9 +559,9 @@ static void build_scene_uv_mapping(const RootSceneTransformMatch &match, uint32_
 	struct vec4 scene_origin;
 	struct vec4 scene_x;
 	struct vec4 scene_y;
-	vec4_transform(&scene_origin, &local_origin, &match.transform);
-	vec4_transform(&scene_x, &local_x, &match.transform);
-	vec4_transform(&scene_y, &local_y, &match.transform);
+	vec4_transform(&scene_origin, &local_origin, &match.draw_transform);
+	vec4_transform(&scene_x, &local_x, &match.draw_transform);
+	vec4_transform(&scene_y, &local_y, &match.draw_transform);
 
 	mapping.available = true;
 	mapping.background_width = match.width;
@@ -542,12 +574,40 @@ static void build_scene_uv_mapping(const RootSceneTransformMatch &match, uint32_
 }
 
 /**
- * Resolves the filtered source into the active scene graph and builds UV mapping.
+ * Builds an oriented scene-space box from a unique background item match.
  */
-static bool try_resolve_scene_uv_mapping(obs_source_t *source, uint32_t local_width, uint32_t local_height,
-	SceneUvMapping &mapping)
+static bool build_background_scene_box(const RootSceneItemMatch &match, BackgroundSceneBox &box)
 {
-	if (source == nullptr || local_width == 0 || local_height == 0) {
+	const struct vec2 corner00 = project_scene_point(match.box_transform, 0.0F, 0.0F);
+	const struct vec2 corner10 = project_scene_point(match.box_transform, 1.0F, 0.0F);
+	const struct vec2 corner01 = project_scene_point(match.box_transform, 0.0F, 1.0F);
+	const struct vec2 axis_x = {corner10.x - corner00.x, corner10.y - corner00.y};
+	const struct vec2 axis_y = {corner01.x - corner00.x, corner01.y - corner00.y};
+	const float axis_x_length = std::sqrt(axis_x.x * axis_x.x + axis_x.y * axis_x.y);
+	const float axis_y_length = std::sqrt(axis_y.x * axis_y.x + axis_y.y * axis_y.y);
+	if (axis_x_length <= 0.00001F || axis_y_length <= 0.00001F) {
+		return false;
+	}
+
+	box.available = true;
+	box.axis_x = {axis_x.x / axis_x_length, axis_x.y / axis_x_length};
+	box.axis_y = {axis_y.x / axis_y_length, axis_y.y / axis_y_length};
+	box.half_extent = {axis_x_length * 0.5F, axis_y_length * 0.5F};
+	box.center = {corner00.x + axis_x.x * 0.5F + axis_y.x * 0.5F,
+		corner00.y + axis_x.y * 0.5F + axis_y.y * 0.5F};
+	return true;
+}
+
+/**
+ * Resolves a source to a unique scene item and optionally returns the root scene.
+ */
+static bool try_resolve_scene_item_match(obs_source_t *source, RootSceneItemMatch &match,
+	obs_source_t **resolved_root_scene)
+{
+	if (resolved_root_scene != nullptr) {
+		*resolved_root_scene = nullptr;
+	}
+	if (source == nullptr) {
 		return false;
 	}
 
@@ -557,12 +617,14 @@ static bool try_resolve_scene_uv_mapping(obs_source_t *source, uint32_t local_wi
 		}
 	};
 
-	RootSceneTransformMatch match = {};
 	obs_source_t *current_scene = obs_frontend_get_current_scene();
-	const SceneSearchStatus current_status = search_root_scene_transform(current_scene, source, match);
+	const SceneSearchStatus current_status = search_root_scene_item(current_scene, source, match);
 	if (current_status == SceneSearchStatus::Unique) {
-		build_scene_uv_mapping(match, local_width, local_height, mapping);
-		release_scene(current_scene);
+		if (resolved_root_scene != nullptr) {
+			*resolved_root_scene = current_scene;
+		} else {
+			release_scene(current_scene);
+		}
 		return true;
 	}
 	if (current_status == SceneSearchStatus::Ambiguous) {
@@ -574,11 +636,14 @@ static bool try_resolve_scene_uv_mapping(obs_source_t *source, uint32_t local_wi
 	if (obs_frontend_preview_program_mode_active()) {
 		preview_scene = obs_frontend_get_current_preview_scene();
 		if (preview_scene != current_scene) {
-			const SceneSearchStatus preview_status = search_root_scene_transform(preview_scene, source, match);
+			const SceneSearchStatus preview_status = search_root_scene_item(preview_scene, source, match);
 			if (preview_status == SceneSearchStatus::Unique) {
-				build_scene_uv_mapping(match, local_width, local_height, mapping);
-				release_scene(preview_scene);
 				release_scene(current_scene);
+				if (resolved_root_scene != nullptr) {
+					*resolved_root_scene = preview_scene;
+				} else {
+					release_scene(preview_scene);
+				}
 				return true;
 			}
 			if (preview_status == SceneSearchStatus::Ambiguous) {
@@ -590,6 +655,7 @@ static bool try_resolve_scene_uv_mapping(obs_source_t *source, uint32_t local_wi
 	}
 
 	bool found_match = false;
+	obs_source_t *matched_scene = nullptr;
 	obs_frontend_source_list scenes = {};
 	obs_frontend_get_scenes(&scenes);
 	for (size_t index = 0; index < scenes.sources.num; ++index) {
@@ -598,9 +664,11 @@ static bool try_resolve_scene_uv_mapping(obs_source_t *source, uint32_t local_wi
 			continue;
 		}
 
-		const SceneSearchStatus status = search_root_scene_transform(scene_source, source, match);
+		RootSceneItemMatch candidate = {};
+		const SceneSearchStatus status = search_root_scene_item(scene_source, source, candidate);
 		if (status == SceneSearchStatus::Ambiguous) {
 			obs_frontend_source_list_free(&scenes);
+			release_scene(matched_scene);
 			if (preview_scene != current_scene) {
 				release_scene(preview_scene);
 			}
@@ -610,6 +678,7 @@ static bool try_resolve_scene_uv_mapping(obs_source_t *source, uint32_t local_wi
 		if (status == SceneSearchStatus::Unique) {
 			if (found_match) {
 				obs_frontend_source_list_free(&scenes);
+				release_scene(matched_scene);
 				if (preview_scene != current_scene) {
 					release_scene(preview_scene);
 				}
@@ -617,6 +686,8 @@ static bool try_resolve_scene_uv_mapping(obs_source_t *source, uint32_t local_wi
 				return false;
 			}
 			found_match = true;
+			match = candidate;
+			matched_scene = obs_source_get_ref(scene_source);
 		}
 	}
 	obs_frontend_source_list_free(&scenes);
@@ -627,6 +698,70 @@ static bool try_resolve_scene_uv_mapping(obs_source_t *source, uint32_t local_wi
 	release_scene(current_scene);
 
 	if (!found_match) {
+		release_scene(matched_scene);
+		return false;
+	}
+
+	if (resolved_root_scene != nullptr) {
+		*resolved_root_scene = matched_scene;
+	} else {
+		release_scene(matched_scene);
+	}
+	return true;
+}
+
+/**
+ * Resolves the filtered source into the active scene graph and builds UV mapping.
+ */
+static bool try_resolve_scene_uv_mapping(obs_source_t *source, uint32_t local_width, uint32_t local_height,
+	SceneUvMapping &mapping, obs_source_t **resolved_root_scene = nullptr)
+{
+	if (source == nullptr || local_width == 0 || local_height == 0) {
+		return false;
+	}
+
+	RootSceneItemMatch match = {};
+	if (!try_resolve_scene_item_match(source, match, resolved_root_scene)) {
+		return false;
+	}
+
+	build_scene_uv_mapping(match, local_width, local_height, mapping);
+	return true;
+}
+
+/**
+ * Resolves the configured background source into a scene-space oriented box.
+ */
+static bool try_resolve_background_scene_box(obs_source_t *root_scene_source,
+	obs_source_t *background_source, BackgroundSceneBox &box)
+{
+	if (root_scene_source == nullptr || background_source == nullptr) {
+		return false;
+	}
+
+	RootSceneItemMatch match = {};
+	if (search_root_scene_item(root_scene_source, background_source, match) != SceneSearchStatus::Unique) {
+		return false;
+	}
+
+	return build_background_scene_box(match, box);
+}
+
+/**
+ * Resolves the configured background source into source-local to scene UV mapping.
+ */
+static bool try_resolve_background_scene_uv_mapping(obs_source_t *root_scene_source,
+	obs_source_t *background_source, uint32_t local_width, uint32_t local_height,
+	SceneUvMapping &mapping)
+{
+	if (root_scene_source == nullptr || background_source == nullptr || local_width == 0 ||
+	    local_height == 0) {
+		return false;
+	}
+
+	RootSceneItemMatch match = {};
+	if (search_root_scene_item(root_scene_source, background_source, match) !=
+	    SceneSearchStatus::Unique) {
 		return false;
 	}
 
@@ -680,19 +815,49 @@ update_background_source(filter);
 }
 
 /**
+ * Lazily creates graphics resources in the render path.
+ */
+static bool ensure_graphics_resources(SceneLightingFilter *filter)
+{
+	if (filter->effect != nullptr && filter->background_render_target != nullptr) {
+		return true;
+	}
+
+	if (filter->effect == nullptr) {
+		const char *effect_file = "scene_lighting.effect";
+		char *effect_path = obs_module_file(effect_file);
+		char *effect_error = nullptr;
+		filter->effect = gs_effect_create_from_file(effect_path, &effect_error);
+		if (filter->effect == nullptr) {
+			blog(LOG_ERROR, "[scene-lighting][resources] failed to load effect from '%s'%s%s",
+				effect_path != nullptr ? effect_path : "<null>",
+				effect_error != nullptr ? ": " : "",
+				effect_error != nullptr ? effect_error : "");
+		}
+		if (effect_error != nullptr) {
+			bfree(effect_error);
+		}
+		bfree(effect_path);
+	}
+
+	if (filter->background_render_target == nullptr) {
+		filter->background_render_target = gs_texrender_create(GS_RGBA, GS_ZS_NONE);
+		if (filter->background_render_target == nullptr) {
+			blog(LOG_ERROR,
+				"[scene-lighting][resources] failed to create background render target");
+		}
+	}
+
+	return filter->effect != nullptr && filter->background_render_target != nullptr;
+}
+
+/**
  * Creates filter state and initializes graphics resources.
  */
 static void *scene_lighting_create(obs_data_t *settings, obs_source_t *source)
 {
 auto *filter = new SceneLightingFilter{};
 filter->source = source;
-
-char *effect_path = obs_module_file("scene_lighting.effect");
-obs_enter_graphics();
-filter->effect = gs_effect_create_from_file(effect_path, nullptr);
-filter->background_render_target = gs_texrender_create(GS_RGBA, GS_ZS_NONE);
-obs_leave_graphics();
-bfree(effect_path);
 
 scene_lighting_update(filter, settings);
 return filter;
@@ -831,10 +996,15 @@ static void scene_lighting_render(void *data, gs_effect_t *)
 auto *filter = static_cast<SceneLightingFilter *>(data);
 	obs_source_t *parent = obs_filter_get_parent(filter->source);
 obs_source_t *target = obs_filter_get_target(filter->source);
-if (target == nullptr || filter->effect == nullptr) {
+if (target == nullptr) {
 obs_source_skip_video_filter(filter->source);
 return;
 }
+
+	if (!ensure_graphics_resources(filter)) {
+		obs_source_skip_video_filter(filter->source);
+		return;
+	}
 
 const uint32_t width = obs_source_get_base_width(target);
 const uint32_t height = obs_source_get_base_height(target);
@@ -844,9 +1014,42 @@ return;
 }
 
 	SceneUvMapping scene_mapping = {};
-	try_resolve_scene_uv_mapping(parent, width, height, scene_mapping);
-	const uint32_t background_width = scene_mapping.available ? scene_mapping.background_width : width;
-	const uint32_t background_height = scene_mapping.available ? scene_mapping.background_height : height;
+	SceneUvMapping background_mapping = {};
+	BackgroundSceneBox background_box = {};
+	obs_source_t *resolved_root_scene = nullptr;
+	try_resolve_scene_uv_mapping(parent, width, height, scene_mapping, &resolved_root_scene);
+	const uint32_t scene_width = scene_mapping.available ? scene_mapping.background_width : width;
+	const uint32_t scene_height = scene_mapping.available ? scene_mapping.background_height : height;
+	uint32_t background_source_width = 0;
+	uint32_t background_source_height = 0;
+	obs_source_t *background_source = nullptr;
+	if (scene_mapping.available && filter->background_source != nullptr) {
+		background_source = obs_weak_source_get_source(filter->background_source);
+		if (background_source != nullptr &&
+		    background_source != (parent != nullptr ? parent : target) && resolved_root_scene != nullptr) {
+			background_source_width = obs_source_get_base_width(background_source);
+			background_source_height = obs_source_get_base_height(background_source);
+			if (background_source_width == 0 || background_source_height == 0) {
+				background_source_width = obs_source_get_width(background_source);
+				background_source_height = obs_source_get_height(background_source);
+			}
+			if (background_source_width != 0 && background_source_height != 0) {
+				try_resolve_background_scene_uv_mapping(resolved_root_scene, background_source,
+					background_source_width, background_source_height, background_mapping);
+			}
+			try_resolve_background_scene_box(resolved_root_scene, background_source, background_box);
+		}
+	}
+	if (background_source != nullptr) {
+		const char *background_name = obs_source_get_name(background_source);
+		UNUSED_PARAMETER(background_name);
+		obs_source_release(background_source);
+	}
+	if (resolved_root_scene != nullptr) {
+		obs_source_release(resolved_root_scene);
+	}
+	const uint32_t background_width = scene_width;
+	const uint32_t background_height = scene_height;
 	gs_texture_t *background_texture =
 		render_background(filter, background_width, background_height, parent != nullptr ? parent : target);
 
@@ -862,6 +1065,12 @@ const float edge_threshold = static_cast<float>(filter->edge_threshold) / 255.0F
 		1.0F / static_cast<float>(height)};
 	const struct vec2 background_texel_size = {1.0F / static_cast<float>(background_width),
 		1.0F / static_cast<float>(background_height)};
+	struct vec2 background_uv_scale = {1.0F, 1.0F};
+	if (background_source_width != 0 && background_source_height != 0) {
+		background_uv_scale = {static_cast<float>(background_source_width) /
+			static_cast<float>(background_width),
+			static_cast<float>(background_source_height) / static_cast<float>(background_height)};
+	}
 float tint_r = 1.0F;
 float tint_g = 1.0F;
 float tint_b = 1.0F;
@@ -889,6 +1098,28 @@ gs_eparam_t *param_tint_color = gs_effect_get_param_by_name(filter->effect, "tin
 	gs_eparam_t *param_scene_uv_y = gs_effect_get_param_by_name(filter->effect, "scene_uv_y");
 	gs_eparam_t *param_scene_mapping_available = gs_effect_get_param_by_name(filter->effect,
 		"scene_mapping_available");
+	gs_eparam_t *param_background_scene_uv_origin = gs_effect_get_param_by_name(filter->effect,
+		"background_scene_uv_origin");
+	gs_eparam_t *param_background_scene_uv_x = gs_effect_get_param_by_name(filter->effect,
+		"background_scene_uv_x");
+	gs_eparam_t *param_background_scene_uv_y = gs_effect_get_param_by_name(filter->effect,
+		"background_scene_uv_y");
+	gs_eparam_t *param_background_scene_mapping_available = gs_effect_get_param_by_name(filter->effect,
+		"background_scene_mapping_available");
+	gs_eparam_t *param_background_render_uv_scale = gs_effect_get_param_by_name(filter->effect,
+		"background_render_uv_scale");
+	gs_eparam_t *param_debug_visualize = gs_effect_get_param_by_name(filter->effect,
+		"debug_visualize");
+	gs_eparam_t *param_background_box_center = gs_effect_get_param_by_name(filter->effect,
+		"background_box_center");
+	gs_eparam_t *param_background_box_axis_x = gs_effect_get_param_by_name(filter->effect,
+		"background_box_axis_x");
+	gs_eparam_t *param_background_box_axis_y = gs_effect_get_param_by_name(filter->effect,
+		"background_box_axis_y");
+	gs_eparam_t *param_background_box_half_extent = gs_effect_get_param_by_name(filter->effect,
+		"background_box_half_extent");
+	gs_eparam_t *param_background_box_available = gs_effect_get_param_by_name(filter->effect,
+		"background_box_available");
 	gs_eparam_t *param_max_edge_width = gs_effect_get_param_by_name(filter->effect, "max_edge_width");
 
 if (param_background_tex != nullptr) {
@@ -945,6 +1176,40 @@ gs_effect_set_float(param_background_available, background_texture != nullptr ? 
 	}
 	if (param_scene_mapping_available != nullptr) {
 		gs_effect_set_float(param_scene_mapping_available, scene_mapping.available ? 1.0F : 0.0F);
+	}
+	if (param_background_scene_uv_origin != nullptr) {
+		gs_effect_set_vec2(param_background_scene_uv_origin, &background_mapping.origin);
+	}
+	if (param_background_scene_uv_x != nullptr) {
+		gs_effect_set_vec2(param_background_scene_uv_x, &background_mapping.axis_x);
+	}
+	if (param_background_scene_uv_y != nullptr) {
+		gs_effect_set_vec2(param_background_scene_uv_y, &background_mapping.axis_y);
+	}
+	if (param_background_scene_mapping_available != nullptr) {
+		gs_effect_set_float(param_background_scene_mapping_available,
+			background_mapping.available ? 1.0F : 0.0F);
+	}
+	if (param_background_render_uv_scale != nullptr) {
+		gs_effect_set_vec2(param_background_render_uv_scale, &background_uv_scale);
+	}
+	if (param_debug_visualize != nullptr) {
+		gs_effect_set_float(param_debug_visualize, 0.0F);
+	}
+	if (param_background_box_center != nullptr) {
+		gs_effect_set_vec2(param_background_box_center, &background_box.center);
+	}
+	if (param_background_box_axis_x != nullptr) {
+		gs_effect_set_vec2(param_background_box_axis_x, &background_box.axis_x);
+	}
+	if (param_background_box_axis_y != nullptr) {
+		gs_effect_set_vec2(param_background_box_axis_y, &background_box.axis_y);
+	}
+	if (param_background_box_half_extent != nullptr) {
+		gs_effect_set_vec2(param_background_box_half_extent, &background_box.half_extent);
+	}
+	if (param_background_box_available != nullptr) {
+		gs_effect_set_float(param_background_box_available, background_box.available ? 1.0F : 0.0F);
 	}
 	if (param_max_edge_width != nullptr) {
 		gs_effect_set_float(param_max_edge_width, kMaxEdgeWidth);

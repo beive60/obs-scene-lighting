@@ -127,9 +127,248 @@ uniform float2 scene_uv_y;
 uniform float scene_mapping_available;
 
 /**
+ * Background source-local UV mapping origin in root-scene UV space.
+ */
+uniform float2 background_scene_uv_origin;
+
+/**
+ * Background source-local UV X axis in root-scene UV space.
+ */
+uniform float2 background_scene_uv_x;
+
+/**
+ * Background source-local UV Y axis in root-scene UV space.
+ */
+uniform float2 background_scene_uv_y;
+
+/**
+ * Flag indicating whether background scene-to-source mapping is available.
+ */
+uniform float background_scene_mapping_available;
+
+/**
+ * Scale from background source UV to the occupied sub-rect in the render target.
+ */
+uniform float2 background_render_uv_scale;
+
+/**
+ * Temporary debug probe that forces an obvious visible output when the shader runs.
+ */
+uniform float debug_visualize;
+
+/**
+ * Background scene box center in scene pixels.
+ */
+uniform float2 background_box_center;
+
+/**
+ * Background scene box X axis in scene pixels.
+ */
+uniform float2 background_box_axis_x;
+
+/**
+ * Background scene box Y axis in scene pixels.
+ */
+uniform float2 background_box_axis_y;
+
+/**
+ * Background scene box half extents in scene pixels.
+ */
+uniform float2 background_box_half_extent;
+
+/**
+ * Flag indicating whether background box projection is available.
+ */
+uniform float background_box_available;
+
+/**
  * Maximum edge-width supported by shader loop.
  */
 uniform float max_edge_width;
+
+float sample_foreground_alpha(float2 uv, float2 pixel_offset)
+{
+    float2 image_size = max(float2(1.0, 1.0), 1.0 / foreground_texel_size);
+    float2 pixel = clamp(floor(uv * image_size + pixel_offset), float2(0.0, 0.0), image_size - 1.0);
+    float2 sample_uv = (pixel + 0.5) * foreground_texel_size;
+    return image.SampleLevel(linear_sampler, sample_uv, 0.0).a;
+}
+
+float2 safe_normalize(float2 value)
+{
+    float len = length(value);
+    if (len > 0.0001)
+        return value / len;
+    return float2(0.0, 0.0);
+}
+
+float2 get_scene_uv(float2 uv)
+{
+    if (scene_mapping_available > 0.5)
+        return scene_uv_origin + scene_uv_x * uv.x + scene_uv_y * uv.y;
+    return uv;
+}
+
+float2 get_fallback_sample_uv(float2 boundary_uv, float2 local_normal, float offset_texels)
+{
+    float2 sample_uv = clamp(boundary_uv + foreground_texel_size * local_normal * offset_texels,
+        float2(0.0, 0.0), float2(1.0, 1.0));
+    return scene_mapping_available > 0.5 ? get_scene_uv(sample_uv) : sample_uv;
+}
+
+float2 get_scene_pixel_position(float2 uv)
+{
+    return get_scene_uv(uv) / max(background_texel_size, float2(0.000001, 0.000001));
+}
+
+float2 get_scene_pixel_normal(float2 local_normal)
+{
+    float2 scene_dx = (scene_uv_x * foreground_texel_size.x) /
+        max(background_texel_size, float2(0.000001, 0.000001));
+    float2 scene_dy = (scene_uv_y * foreground_texel_size.y) /
+        max(background_texel_size, float2(0.000001, 0.000001));
+    return safe_normalize(scene_dx * local_normal.x + scene_dy * local_normal.y);
+}
+
+float2 get_background_render_uv(float2 scene_uv, out float valid)
+{
+    valid = 0.0;
+
+    if (background_scene_mapping_available < 0.5)
+        return float2(0.0, 0.0);
+
+    float det = background_scene_uv_x.x * background_scene_uv_y.y -
+        background_scene_uv_x.y * background_scene_uv_y.x;
+    if (abs(det) <= 0.000001)
+        return float2(0.0, 0.0);
+
+    float2 delta = scene_uv - background_scene_uv_origin;
+    float inv_det = 1.0 / det;
+    float2 local_uv = float2(
+        (delta.x * background_scene_uv_y.y - delta.y * background_scene_uv_y.x) * inv_det,
+        (background_scene_uv_x.x * delta.y - background_scene_uv_x.y * delta.x) * inv_det);
+
+    valid = 1.0;
+    return local_uv * background_render_uv_scale;
+}
+
+float3 sample_background_scene_uv(float2 scene_uv)
+{
+    if (background_available < 0.5)
+        return float3(0.5, 0.5, 0.5);
+
+    if (background_scene_mapping_available < 0.5)
+        return background_tex.SampleLevel(background_sampler, scene_uv, 0.0).rgb;
+
+    float valid = 0.0;
+    float2 background_uv = get_background_render_uv(scene_uv, valid);
+    if (valid < 0.5)
+        return float3(0.5, 0.5, 0.5);
+
+    float2 max_uv = max(background_render_uv_scale, float2(0.000001, 0.000001));
+    return background_tex.SampleLevel(background_sampler,
+        clamp(background_uv, float2(0.0, 0.0), max_uv), 0.0).rgb;
+}
+
+float2 estimate_local_normal(float2 uv)
+{
+    float a_l = sample_foreground_alpha(uv, float2(-1.0, 0.0));
+    float a_r = sample_foreground_alpha(uv, float2(1.0, 0.0));
+    float a_u = sample_foreground_alpha(uv, float2(0.0, -1.0));
+    float a_d = sample_foreground_alpha(uv, float2(0.0, 1.0));
+
+    float2 gradient = float2(a_r - a_l, a_d - a_u);
+    float2 local_normal = safe_normalize(-gradient);
+    if (length(local_normal) > 0.0)
+        return local_normal;
+
+    float2 edge_normal = float2(step(edge_threshold, a_l) - step(edge_threshold, a_r),
+        step(edge_threshold, a_u) - step(edge_threshold, a_d));
+    return safe_normalize(edge_normal);
+}
+
+void find_foreground_edge(float2 uv, float2 local_normal, out float edge_weight, out float2 boundary_uv)
+{
+    edge_weight = 0.0;
+    boundary_uv = uv;
+
+    if (length(local_normal) <= 0.0001)
+        return;
+
+    const int max_edge = 32;
+    for (int k = 1; k <= max_edge; ++k) {
+        if ((float)k > edge_width)
+            continue;
+
+        float2 pixel_offset = local_normal * (float)k;
+        if (sample_foreground_alpha(uv, pixel_offset) < edge_threshold) {
+            edge_weight = 1.0 - ((float)k - 1.0) / max(edge_width, 1.0);
+            boundary_uv = clamp(uv + foreground_texel_size * pixel_offset,
+                float2(0.0, 0.0), float2(1.0, 1.0));
+            return;
+        }
+    }
+}
+
+float2 project_onto_background_box(float2 scene_point, float2 scene_direction, out float valid)
+{
+    float2 delta = scene_point - background_box_center;
+    float2 local_point = float2(dot(delta, background_box_axis_x),
+        dot(delta, background_box_axis_y));
+    float2 clamped_point = clamp(local_point,
+        -background_box_half_extent, background_box_half_extent);
+    float2 local_direction = float2(dot(scene_direction, background_box_axis_x),
+        dot(scene_direction, background_box_axis_y));
+
+    valid = 1.0;
+
+    bool inside_box = abs(local_point.x) < background_box_half_extent.x &&
+        abs(local_point.y) < background_box_half_extent.y;
+    if (!inside_box || length(local_direction) <= 0.0001) {
+        return background_box_center +
+            background_box_axis_x * clamped_point.x +
+            background_box_axis_y * clamped_point.y;
+    }
+
+    float tx = 1000000.0;
+    if (abs(local_direction.x) > 0.0001) {
+        float target_x = local_direction.x > 0.0 ?
+            background_box_half_extent.x : -background_box_half_extent.x;
+        tx = (target_x - local_point.x) / local_direction.x;
+    }
+
+    float ty = 1000000.0;
+    if (abs(local_direction.y) > 0.0001) {
+        float target_y = local_direction.y > 0.0 ?
+            background_box_half_extent.y : -background_box_half_extent.y;
+        ty = (target_y - local_point.y) / local_direction.y;
+    }
+
+    float exit_distance = 1000000.0;
+    if (tx > 0.0001)
+        exit_distance = min(exit_distance, tx);
+    if (ty > 0.0001)
+        exit_distance = min(exit_distance, ty);
+
+    if (exit_distance >= 999999.0) {
+        valid = 0.0;
+        return scene_point;
+    }
+
+    float2 projected_local = clamp(local_point + local_direction * exit_distance,
+        -background_box_half_extent, background_box_half_extent);
+    return background_box_center +
+        background_box_axis_x * projected_local.x +
+        background_box_axis_y * projected_local.y;
+}
+
+float compute_background_sample_radius()
+{
+    float box_width = background_box_half_extent.x * 2.0;
+    float box_height = background_box_half_extent.y * 2.0;
+    float box_scale = sqrt(max(1.0, box_width * box_height));
+    return clamp((blur_radius / 100.0) * box_scale, 1.0, max(box_width, box_height));
+}
 
 /**
  * Blends a channel value with ambient value based on blend mode.
@@ -148,49 +387,52 @@ float blend_channel(float fg, float bg, float mode)
 /**
  * Samples environment color from the background source.
  */
-float3 sample_environment(float2 uv)
+float3 sample_environment_fallback(float2 boundary_uv, float2 local_normal)
 {
     if (background_available < 0.5)
         return float3(0.5, 0.5, 0.5);
 
-    float2 background_uv = uv;
-    if (scene_mapping_available > 0.5)
-        background_uv = scene_uv_origin + scene_uv_x * uv.x + scene_uv_y * uv.y;
-
     if (sampling_method > 0.5) {
         float3 sum = 0.0;
-        sum += background_tex.Sample(background_sampler,
-            scene_mapping_available > 0.5 ? (scene_uv_origin + scene_uv_x * 0.25 + scene_uv_y * 0.25) : float2(0.25, 0.25)).rgb;
-        sum += background_tex.Sample(background_sampler,
-            scene_mapping_available > 0.5 ? (scene_uv_origin + scene_uv_x * 0.75 + scene_uv_y * 0.25) : float2(0.75, 0.25)).rgb;
-        sum += background_tex.Sample(background_sampler,
-            scene_mapping_available > 0.5 ? (scene_uv_origin + scene_uv_x * 0.5 + scene_uv_y * 0.5) : float2(0.5, 0.5)).rgb;
-        sum += background_tex.Sample(background_sampler,
-            scene_mapping_available > 0.5 ? (scene_uv_origin + scene_uv_x * 0.25 + scene_uv_y * 0.75) : float2(0.25, 0.75)).rgb;
-        sum += background_tex.Sample(background_sampler,
-            scene_mapping_available > 0.5 ? (scene_uv_origin + scene_uv_x * 0.75 + scene_uv_y * 0.75) : float2(0.75, 0.75)).rgb;
+        sum += sample_background_scene_uv(
+            scene_mapping_available > 0.5 ? (scene_uv_origin + scene_uv_x * 0.25 + scene_uv_y * 0.25) : float2(0.25, 0.25));
+        sum += sample_background_scene_uv(
+            scene_mapping_available > 0.5 ? (scene_uv_origin + scene_uv_x * 0.75 + scene_uv_y * 0.25) : float2(0.75, 0.25));
+        sum += sample_background_scene_uv(
+            scene_mapping_available > 0.5 ? (scene_uv_origin + scene_uv_x * 0.5 + scene_uv_y * 0.5) : float2(0.5, 0.5));
+        sum += sample_background_scene_uv(
+            scene_mapping_available > 0.5 ? (scene_uv_origin + scene_uv_x * 0.25 + scene_uv_y * 0.75) : float2(0.25, 0.75));
+        sum += sample_background_scene_uv(
+            scene_mapping_available > 0.5 ? (scene_uv_origin + scene_uv_x * 0.75 + scene_uv_y * 0.75) : float2(0.75, 0.75));
         return sum / 5.0;
     }
 
-    float2 sample_step = max(background_texel_size * max(1.0, blur_radius), background_texel_size);
-    float3 sum = 0.0;
-    sum += background_tex.Sample(background_sampler, background_uv + sample_step * float2(-1.0, -1.0)).rgb;
-    sum += background_tex.Sample(background_sampler, background_uv + sample_step * float2(0.0, -1.0)).rgb;
-    sum += background_tex.Sample(background_sampler, background_uv + sample_step * float2(1.0, -1.0)).rgb;
-    sum += background_tex.Sample(background_sampler, background_uv + sample_step * float2(-1.0, 0.0)).rgb;
-    sum += background_tex.Sample(background_sampler, background_uv).rgb;
-    sum += background_tex.Sample(background_sampler, background_uv + sample_step * float2(1.0, 0.0)).rgb;
-    sum += background_tex.Sample(background_sampler, background_uv + sample_step * float2(-1.0, 1.0)).rgb;
-    sum += background_tex.Sample(background_sampler, background_uv + sample_step * float2(0.0, 1.0)).rgb;
-    sum += background_tex.Sample(background_sampler, background_uv + sample_step * float2(1.0, 1.0)).rgb;
-    return sum / 9.0;
-}
+    float2 outward_dir = safe_normalize(local_normal);
+    if (length(outward_dir) <= 0.0001) {
+        return sample_background_scene_uv(get_scene_uv(boundary_uv));
+    }
 
-float sample_foreground_alpha(float2 uv, float2 pixel_offset)
-{
-    float2 image_size = max(float2(1.0, 1.0), 1.0 / foreground_texel_size);
-    float2 pixel = clamp(floor(uv * image_size + pixel_offset), float2(0.0, 0.0), image_size - 1.0);
-    return image.Load(int3(pixel, 0)).a;
+    float3 sum = 0.0;
+    float total_weight = 0.0;
+    float guard_texels = max(2.0, edge_width);
+    float step_texels = max(1.0, blur_radius * 0.35);
+
+    sum += sample_background_scene_uv(
+        get_fallback_sample_uv(boundary_uv, outward_dir, guard_texels + step_texels * 0.0)) * 1.0;
+    total_weight += 1.0;
+    sum += sample_background_scene_uv(
+        get_fallback_sample_uv(boundary_uv, outward_dir, guard_texels + step_texels * 1.0)) * 2.0;
+    total_weight += 2.0;
+    sum += sample_background_scene_uv(
+        get_fallback_sample_uv(boundary_uv, outward_dir, guard_texels + step_texels * 2.0)) * 3.0;
+    total_weight += 3.0;
+    sum += sample_background_scene_uv(
+        get_fallback_sample_uv(boundary_uv, outward_dir, guard_texels + step_texels * 3.0)) * 4.0;
+    total_weight += 4.0;
+    sum += sample_background_scene_uv(
+        get_fallback_sample_uv(boundary_uv, outward_dir, guard_texels + step_texels * 4.0)) * 5.0;
+    total_weight += 5.0;
+    return sum / max(total_weight, 1.0);
 }
 
 /**
@@ -203,45 +445,73 @@ float4 scene_lighting_pixel_shader(VertData v_in) : TARGET
     if (fg.a < edge_threshold)
         return fg;
 
-    float3 ambient = sample_environment(uv) * tint_color;
+    if (debug_visualize > 0.5) {
+        float stripe = frac((uv.x + uv.y) * 40.0);
+        float3 probe = stripe < 0.5 ? float3(1.0, 0.0, 1.0) : float3(0.0, 1.0, 1.0);
+        return float4(saturate(lerp(fg.rgb, probe, 0.85)), fg.a);
+    }
+
+    float2 local_normal = estimate_local_normal(uv);
+    float edge_weight = 0.0;
+    float2 boundary_uv = uv;
+    find_foreground_edge(uv, local_normal, edge_weight, boundary_uv);
+
+    float3 ambient = float3(0.0, 0.0, 0.0);
+    float blend_weight = 0.0;
+    float edge_lighting_weight = 0.0;
+    float rim_term = max(0.0, dot(local_normal, light_dir));
+    float projected_weight = 0.0;
+    float2 projected_scene_uv = float2(0.0, 0.0);
+
+    if (edge_weight > 0.0) {
+        ambient = sample_environment_fallback(boundary_uv, local_normal) * tint_color;
+        blend_weight = intensity * edge_weight;
+        edge_lighting_weight = intensity * edge_weight;
+    }
+
+    if (background_box_available > 0.5 && scene_mapping_available > 0.5 &&
+        background_scene_mapping_available > 0.5 && background_available > 0.5 &&
+        edge_weight > 0.0) {
+        float2 scene_normal = get_scene_pixel_normal(local_normal);
+        if (length(scene_normal) > 0.0) {
+            float sample_radius = compute_background_sample_radius();
+            float2 boundary_scene = get_scene_pixel_position(boundary_uv);
+            float2 seed_point = boundary_scene + scene_normal * max(1.0, sample_radius * 0.25);
+            float projection_valid = 0.0;
+            float2 projected_point = project_onto_background_box(
+                seed_point, scene_normal, projection_valid);
+            float2 light_vector = projected_point - boundary_scene;
+            float light_distance = length(light_vector);
+            if (projection_valid > 0.5 && light_distance > 0.0001) {
+                float2 light_direction = light_vector / light_distance;
+                float angle_weight = saturate(dot(scene_normal, light_direction));
+                float distance_sigma = max(1.0, length(background_box_half_extent) + blur_radius);
+                float distance_weight = exp(-light_distance / distance_sigma);
+                projected_weight = edge_weight * angle_weight * distance_weight;
+                projected_scene_uv = projected_point * background_texel_size;
+            }
+        }
+    }
+
+    if (projected_weight > 0.0001) {
+        ambient = sample_background_scene_uv(projected_scene_uv) * tint_color;
+        blend_weight = intensity * projected_weight;
+        edge_lighting_weight = intensity * projected_weight;
+        rim_term = 1.0;
+    }
 
     float3 blended = float3(
         blend_channel(fg.r, ambient.r, blend_mode),
         blend_channel(fg.g, ambient.g, blend_mode),
         blend_channel(fg.b, ambient.b, blend_mode));
-    float3 rgb = lerp(fg.rgb, blended, intensity);
+    float3 rgb = lerp(fg.rgb, blended, saturate(blend_weight));
 
-    const int max_edge = (int)max_edge_width;
-    float em = 0.0;
-    float2 normal = 0.0;
-    for (int k = 1; k <= max_edge; ++k) {
-        if ((float)k > edge_width)
-            break;
-        float2 pixel_offset = float2((float)k, (float)k);
-        float a_l = sample_foreground_alpha(uv, float2(-pixel_offset.x, 0.0));
-        float a_r = sample_foreground_alpha(uv, float2(pixel_offset.x, 0.0));
-        float a_u = sample_foreground_alpha(uv, float2(0.0, -pixel_offset.y));
-        float a_d = sample_foreground_alpha(uv, float2(0.0, pixel_offset.y));
-        if (min(min(a_l, a_r), min(a_u, a_d)) < edge_threshold) {
-            em = 1.0 - ((float)k - 1.0) / max(edge_width, 1.0);
-            normal = float2(step(edge_threshold, a_r) - step(edge_threshold, a_l),
-                step(edge_threshold, a_d) - step(edge_threshold, a_u));
-            break;
-        }
-    }
-
-    if (em > 0.0) {
+    if (edge_lighting_weight > 0.0) {
         if (enable_wrap > 0.5)
-            rgb = saturate(rgb + ambient * em * intensity * 0.5);
+            rgb = saturate(rgb + ambient * edge_lighting_weight * 0.5);
 
-        if (enable_rim > 0.5) {
-            float len_n = length(normal);
-            if (len_n > 0.001) {
-                float2 nrm = normal / len_n;
-                float rim = max(0.0, dot(nrm, light_dir));
-                rgb = saturate(rgb + ambient * rim * em * intensity * 0.6);
-            }
-        }
+        if (enable_rim > 0.5)
+            rgb = saturate(rgb + ambient * rim_term * edge_lighting_weight * 0.6);
     }
 
     return float4(rgb, fg.a);
