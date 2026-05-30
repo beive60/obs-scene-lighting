@@ -249,6 +249,11 @@ struct SceneLightingFilter {
 	 */
 	obs_weak_source_t *background_source = nullptr;
 	/**
+	 * Guards against re-entrant background rendering (e.g. when the
+	 * background source transitively contains this filter's parent).
+	 */
+	bool rendering_background = false;
+	/**
 	 * Loaded graphics effect.
 	 */
 	gs_effect_t *effect = nullptr;
@@ -407,9 +412,9 @@ filter->background_source_name = bstrdup(name);
 static void decode_tint(uint32_t tint_color, float &r, float &g, float &b)
 {
 const float normalize = 1.0F / 255.0F;
-r = static_cast<float>((tint_color >> 16U) & 0xFFU) * normalize;
+r = static_cast<float>(tint_color & 0xFFU) * normalize;
 g = static_cast<float>((tint_color >> 8U) & 0xFFU) * normalize;
-b = static_cast<float>(tint_color & 0xFFU) * normalize;
+b = static_cast<float>((tint_color >> 16U) & 0xFFU) * normalize;
 }
 
 /**
@@ -870,7 +875,9 @@ static void scene_lighting_destroy(void *data)
 {
 auto *filter = static_cast<SceneLightingFilter *>(data);
 
+if (filter->background_source != nullptr) {
 obs_weak_source_release(filter->background_source);
+}
 bfree(filter->background_source_name);
 
 obs_enter_graphics();
@@ -916,6 +923,7 @@ static obs_properties_t *scene_lighting_properties(void *data)
 		OBS_COMBO_TYPE_LIST, OBS_COMBO_FORMAT_STRING);
 	obs_property_list_add_string(source_prop, obs_module_text(kTextNone), "");
 	obs_enum_sources(enum_sources_for_property, source_prop);
+	obs_enum_scenes(enum_sources_for_property, source_prop);
 
 	obs_property_t *blend_mode = obs_properties_add_list(props, kPropBlendMode,
 		obs_module_text(kTextBlendMode),
@@ -960,6 +968,10 @@ if (filter->background_source == nullptr || filter->background_render_target == 
 return nullptr;
 }
 
+if (filter->rendering_background) {
+return nullptr;
+}
+
 	obs_source_t *background = obs_weak_source_get_source(filter->background_source);
 	if (background == nullptr || background == excluded_source) {
 		if (background != nullptr) {
@@ -979,7 +991,9 @@ return nullptr;
 	gs_projection_push();
 	gs_clear(GS_CLEAR_COLOR, &clear_color, 0.0F, 0);
 	gs_ortho(0.0F, static_cast<float>(width), 0.0F, static_cast<float>(height), -100.0F, 100.0F);
+	filter->rendering_background = true;
 	obs_source_video_render(background);
+	filter->rendering_background = false;
 	gs_projection_pop();
 	gs_viewport_pop();
 	gs_texrender_end(filter->background_render_target);
@@ -1054,6 +1068,7 @@ return;
 		render_background(filter, background_width, background_height, parent != nullptr ? parent : target);
 
 if (!obs_source_process_filter_begin(filter->source, GS_RGBA, OBS_ALLOW_DIRECT_RENDERING)) {
+obs_source_skip_video_filter(filter->source);
 return;
 }
 
@@ -1120,7 +1135,6 @@ gs_eparam_t *param_tint_color = gs_effect_get_param_by_name(filter->effect, "tin
 		"background_box_half_extent");
 	gs_eparam_t *param_background_box_available = gs_effect_get_param_by_name(filter->effect,
 		"background_box_available");
-	gs_eparam_t *param_max_edge_width = gs_effect_get_param_by_name(filter->effect, "max_edge_width");
 
 if (param_background_tex != nullptr) {
 gs_effect_set_texture(param_background_tex, background_texture);
@@ -1210,9 +1224,6 @@ gs_effect_set_float(param_background_available, background_texture != nullptr ? 
 	}
 	if (param_background_box_available != nullptr) {
 		gs_effect_set_float(param_background_box_available, background_box.available ? 1.0F : 0.0F);
-	}
-	if (param_max_edge_width != nullptr) {
-		gs_effect_set_float(param_max_edge_width, kMaxEdgeWidth);
 	}
 
 obs_source_process_filter_end(filter->source, filter->effect, width, height);

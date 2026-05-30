@@ -182,9 +182,9 @@ uniform float2 background_box_half_extent;
 uniform float background_box_available;
 
 /**
- * Maximum edge-width supported by shader loop.
+ * Maximum edge-width supported by shader loop (matches C++ kMaxEdgeWidth).
  */
-uniform float max_edge_width;
+static const int kMaxEdge = 50;
 
 float sample_foreground_alpha(float2 uv, float2 pixel_offset)
 {
@@ -295,8 +295,7 @@ void find_foreground_edge(float2 uv, float2 local_normal, out float edge_weight,
     if (length(local_normal) <= 0.0001)
         return;
 
-    const int max_edge = 32;
-    for (int k = 1; k <= max_edge; ++k) {
+    for (int k = 1; k <= kMaxEdge; ++k) {
         if ((float)k > edge_width)
             continue;
 
