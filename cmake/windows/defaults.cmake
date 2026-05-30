@@ -2,8 +2,18 @@
 
 include_guard(GLOBAL)
 
-if(NOT CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
-  return()
+set(CMAKE_FIND_PACKAGE_TARGETS_GLOBAL TRUE)
+
+if(OBS_BOOTSTRAP_DEPS AND NOT libobs_DIR)
+  include(buildspec)
 endif()
 
-set(CMAKE_INSTALL_PREFIX "${CMAKE_BINARY_DIR}/install" CACHE PATH "Installation prefix" FORCE)
+if(CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
+  set(
+    CMAKE_INSTALL_PREFIX
+    "${CMAKE_CURRENT_BINARY_DIR}/install"
+    CACHE PATH
+    "Default plugin installation directory"
+    FORCE
+  )
+endif()

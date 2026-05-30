@@ -1,11 +1,12 @@
-# OS-specific configuration module
+# CMake operating system bootstrap module
 
 include_guard(GLOBAL)
 
-if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
+if(CMAKE_HOST_SYSTEM_NAME STREQUAL "Windows")
+  set(CMAKE_C_EXTENSIONS FALSE)
+  set(CMAKE_CXX_EXTENSIONS FALSE)
   list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake/windows")
-elseif(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
-  list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake/macos")
-elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-  list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake/linux")
+  set(OS_WINDOWS TRUE)
+else()
+  message(FATAL_ERROR "This repository currently supports the Windows bootstrap flow only.")
 endif()

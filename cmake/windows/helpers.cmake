@@ -14,11 +14,7 @@ function(target_install_resources target)
     endif()
   endforeach()
 
-  install(
-    DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/data/"
-    DESTINATION "data/obs-plugins/${target}"
-    USE_SOURCE_PERMISSIONS
-  )
+  install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/data/" DESTINATION "data/obs-plugins/${target}" USE_SOURCE_PERMISSIONS)
 
   add_custom_command(
     TARGET ${target}
@@ -52,11 +48,7 @@ function(set_target_properties_plugin target)
       SOVERSION ${PLUGIN_VERSION_MAJOR}
   )
 
-  install(
-    TARGETS ${target}
-    RUNTIME DESTINATION "obs-plugins/64bit"
-    LIBRARY DESTINATION "obs-plugins/64bit"
-  )
+  install(TARGETS ${target} RUNTIME DESTINATION "obs-plugins/64bit" LIBRARY DESTINATION "obs-plugins/64bit")
 
   install(
     FILES "$<TARGET_PDB_FILE:${target}>"
@@ -68,8 +60,7 @@ function(set_target_properties_plugin target)
   add_custom_command(
     TARGET ${target}
     POST_BUILD
-    COMMAND "${CMAKE_COMMAND}" -E make_directory
-            "${CMAKE_CURRENT_BINARY_DIR}/rundir/$<CONFIG>/obs-plugins/64bit"
+    COMMAND "${CMAKE_COMMAND}" -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/rundir/$<CONFIG>/obs-plugins/64bit"
     COMMAND "${CMAKE_COMMAND}" -E copy_if_different "$<TARGET_FILE:${target}>"
             "${CMAKE_CURRENT_BINARY_DIR}/rundir/$<CONFIG>/obs-plugins/64bit"
     COMMAND "${CMAKE_COMMAND}" -E copy_if_different
