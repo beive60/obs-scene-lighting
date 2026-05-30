@@ -1,3 +1,59 @@
+<#
+.SYNOPSIS
+  Builds and installs the obs-scene-lighting plugin into a portable OBS Studio installation.
+
+.DESCRIPTION
+  This script configures, builds, and installs the obs-scene-lighting OBS plugin
+  into a local portable OBS Studio directory. It uses CMake presets for configuration
+  and supports WhatIf/Confirm via SupportsShouldProcess.
+
+  The target OBS installation must be a portable build (indicated by the presence of
+  portable_mode.txt in the root directory).
+
+.PARAMETER ObsRoot
+  Path to the portable OBS Studio installation directory.
+  Default: 'C:\Apps\OBS-Studio\OBS-Studio-32.1.2-Windows-x64'
+
+.PARAMETER Preset
+  CMake preset name used for the configure step.
+  Default: 'windows-x64'
+
+.PARAMETER BuildDir
+  Path to the CMake build output directory. Can be relative to the repository root.
+  Default: 'build_x64'
+
+.PARAMETER Configuration
+  CMake build configuration (e.g., Debug, Release, RelWithDebInfo).
+  Default: 'RelWithDebInfo'
+
+.PARAMETER CMakeExecutable
+  Path or command name for the CMake executable.
+  Default: 'C:\Program Files\CMake\bin\cmake.exe'
+
+.PARAMETER SkipConfigure
+  When specified, skips the CMake configure step. Useful when the build directory
+  is already configured.
+
+.PARAMETER SkipBuild
+  When specified, skips the CMake build step. Useful when the plugin is already
+  built and only the install step is needed.
+
+.EXAMPLE
+  .\install-portable-obs.ps1
+  Configures, builds, and installs the plugin using default parameters.
+
+.EXAMPLE
+  .\install-portable-obs.ps1 -SkipConfigure -SkipBuild
+  Installs a previously built plugin without re-configuring or re-building.
+
+.EXAMPLE
+  .\install-portable-obs.ps1 -ObsRoot 'D:\OBS\portable' -Configuration 'Debug'
+  Builds a Debug configuration and installs into a custom OBS directory.
+
+.EXAMPLE
+  .\install-portable-obs.ps1 -WhatIf
+  Shows what actions would be performed without executing them.
+#>
 [CmdletBinding(SupportsShouldProcess)]
 param(
   [string]$ObsRoot = 'C:\Apps\OBS-Studio\OBS-Studio-32.1.2-Windows-x64',
