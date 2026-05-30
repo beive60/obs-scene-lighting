@@ -1055,8 +1055,6 @@ return;
 		}
 	}
 	if (background_source != nullptr) {
-		const char *background_name = obs_source_get_name(background_source);
-		UNUSED_PARAMETER(background_name);
 		obs_source_release(background_source);
 	}
 	if (resolved_root_scene != nullptr) {
