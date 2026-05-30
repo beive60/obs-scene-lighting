@@ -2,6 +2,7 @@ name: Code Quality
 
 on:
     pull_request:
+        types: [opened, synchronize, reopened, ready_for_review]
     push:
         branches:
             - main
@@ -15,51 +16,38 @@ concurrency:
     cancel-in-progress: true
 
 jobs:
-    markdown:
-        name: Markdown
-        runs-on: ubuntu-latest
-        timeout-minutes: 5
-        steps:
-            - name: Check out repository
-              uses: actions/checkout@v5
+  linters:
+    name: Code Quality Linters
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
 
-            - name: Lint Markdown files
-              uses: DavidAnson/markdownlint-cli2-action@v23
-              with:
-                  globs: |
-                      README.md
-                                            .github/**/*.md
-                      docs/**/*.md
+      - name: Lint Markdown files
+        uses: DavidAnson/markdownlint-cli2-action@v23
+        with:
+          globs: |
+            README.md
+            .github/**/*.md
+            docs/**/*.md
 
-    spelling:
-        name: Spelling
-        runs-on: ubuntu-latest
-        timeout-minutes: 5
-        steps:
-            - name: Check out repository
-              uses: actions/checkout@v5
+      - name: Run cspell
+        if: always() # 先行ステップの成否に関わらず実行し、全エラーを網羅する
+        uses: streetsidesoftware/cspell-action@v8
+        with:
+          config: cspell.yml
+          incremental_files_only: false
+          files: |
+            README.md
+            .github/**/*.md
+            cspell.yml
+            project-words.txt
+            .github/workflows/**/*.{yml,yaml}
 
-            - name: Run cspell
-              uses: streetsidesoftware/cspell-action@v8
-              with:
-                  config: cspell.yml
-                  incremental_files_only: false
-                  files: |
-                      README.md
-                                            .github/**/*.md
-                      cspell.yml
-                      project-words.txt
-                      .github/workflows/**/*.{yml,yaml}
-
-    workflow-lint:
-        name: Workflow Lint
-        runs-on: ubuntu-latest
-        timeout-minutes: 5
-        steps:
-            - name: Check out repository
-              uses: actions/checkout@v5
-
-            - name: Lint GitHub Actions workflows
-              uses: docker://rhysd/actionlint:1.7.12
-              with:
-                  args: -color
+      - name: Lint GitHub Actions workflows
+        if: always()
+        uses: docker://rhysd/actionlint:1.7.12
+        with:
+          args: -color
