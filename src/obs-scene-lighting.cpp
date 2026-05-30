@@ -1124,8 +1124,6 @@ gs_eparam_t *param_tint_color = gs_effect_get_param_by_name(filter->effect, "tin
 		"background_scene_mapping_available");
 	gs_eparam_t *param_background_render_uv_scale = gs_effect_get_param_by_name(filter->effect,
 		"background_render_uv_scale");
-	gs_eparam_t *param_debug_visualize = gs_effect_get_param_by_name(filter->effect,
-		"debug_visualize");
 	gs_eparam_t *param_background_box_center = gs_effect_get_param_by_name(filter->effect,
 		"background_box_center");
 	gs_eparam_t *param_background_box_axis_x = gs_effect_get_param_by_name(filter->effect,
@@ -1207,9 +1205,6 @@ gs_effect_set_float(param_background_available, background_texture != nullptr ? 
 	}
 	if (param_background_render_uv_scale != nullptr) {
 		gs_effect_set_vec2(param_background_render_uv_scale, &background_uv_scale);
-	}
-	if (param_debug_visualize != nullptr) {
-		gs_effect_set_float(param_debug_visualize, 0.0F);
 	}
 	if (param_background_box_center != nullptr) {
 		gs_effect_set_vec2(param_background_box_center, &background_box.center);

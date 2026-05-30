@@ -152,11 +152,6 @@ uniform float background_scene_mapping_available;
 uniform float2 background_render_uv_scale;
 
 /**
- * Temporary debug probe that forces an obvious visible output when the shader runs.
- */
-uniform float debug_visualize;
-
-/**
  * Background scene box center in scene pixels.
  */
 uniform float2 background_box_center;
@@ -443,12 +438,6 @@ float4 scene_lighting_pixel_shader(VertData v_in) : TARGET
     float4 fg = image.Sample(linear_sampler, uv);
     if (fg.a < edge_threshold)
         return fg;
-
-    if (debug_visualize > 0.5) {
-        float stripe = frac((uv.x + uv.y) * 40.0);
-        float3 probe = stripe < 0.5 ? float3(1.0, 0.0, 1.0) : float3(0.0, 1.0, 1.0);
-        return float4(saturate(lerp(fg.rgb, probe, 0.85)), fg.a);
-    }
 
     float2 local_normal = estimate_local_normal(uv);
     float edge_weight = 0.0;
