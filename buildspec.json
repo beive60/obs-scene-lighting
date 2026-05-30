@@ -1,0 +1,39 @@
+{
+  "dependencies": {
+    "obs-studio": {
+      "version": "32.1.2",
+      "baseUrl": "https://github.com/obsproject/obs-studio/releases/download",
+      "label": "OBS sources",
+      "hashes": {
+        "windows-x64": "c6532380c68a75327fe8b551461adeca8f184dcbe4015096251a6de76362a554"
+      }
+    },
+    "prebuilt": {
+      "version": "2026-05-21",
+      "baseUrl": "https://github.com/obsproject/obs-deps/releases/download",
+      "label": "Pre-Built obs-deps",
+      "hashes": {
+        "windows-x64": "0a7d633b1318ad9cf90b993464a64dc72a08e727c98386ae7c6b3a6a6ba5dae9"
+      }
+    },
+    "qt6": {
+      "version": "2026-05-21",
+      "baseUrl": "https://github.com/obsproject/obs-deps/releases/download",
+      "label": "Pre-Built Qt6",
+      "hashes": {
+        "windows-x64": "9d421e790222e9475e0811b3a62e1b56f3e1f8198cb05be2e08c9dc395d45be3"
+      }
+    }
+  },
+  "platformConfig": {
+    "macos": {
+      "bundleId": "com.beive60.obs-scene-lighting"
+    }
+  },
+  "name": "obs-scene-lighting",
+  "displayName": "Scene Lighting for OBS",
+  "version": "0.1.0",
+  "author": "beive60",
+  "website": "https://github.com/beive60/obs-scene-lighting",
+  "email": ""
+}
