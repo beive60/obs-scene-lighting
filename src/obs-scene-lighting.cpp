@@ -1005,6 +1005,12 @@ return gs_texrender_get_texture(filter->background_render_target);
 static void scene_lighting_render(void *data, gs_effect_t *)
 {
 auto *filter = static_cast<SceneLightingFilter *>(data);
+
+	if (filter->rendering_background) {
+		obs_source_skip_video_filter(filter->source);
+		return;
+	}
+
 	obs_source_t *parent = obs_filter_get_parent(filter->source);
 obs_source_t *target = obs_filter_get_target(filter->source);
 if (target == nullptr) {
