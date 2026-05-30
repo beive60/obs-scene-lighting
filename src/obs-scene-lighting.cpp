@@ -656,6 +656,9 @@ static bool try_resolve_scene_item_match(obs_source_t *source, RootSceneItemMatc
 				release_scene(current_scene);
 				return false;
 			}
+		} else {
+			release_scene(preview_scene);
+			preview_scene = nullptr;
 		}
 	}
 
@@ -674,9 +677,7 @@ static bool try_resolve_scene_item_match(obs_source_t *source, RootSceneItemMatc
 		if (status == SceneSearchStatus::Ambiguous) {
 			obs_frontend_source_list_free(&scenes);
 			release_scene(matched_scene);
-			if (preview_scene != current_scene) {
-				release_scene(preview_scene);
-			}
+			release_scene(preview_scene);
 			release_scene(current_scene);
 			return false;
 		}
@@ -684,9 +685,7 @@ static bool try_resolve_scene_item_match(obs_source_t *source, RootSceneItemMatc
 			if (found_match) {
 				obs_frontend_source_list_free(&scenes);
 				release_scene(matched_scene);
-				if (preview_scene != current_scene) {
-					release_scene(preview_scene);
-				}
+				release_scene(preview_scene);
 				release_scene(current_scene);
 				return false;
 			}
@@ -697,9 +696,7 @@ static bool try_resolve_scene_item_match(obs_source_t *source, RootSceneItemMatc
 	}
 	obs_frontend_source_list_free(&scenes);
 
-	if (preview_scene != current_scene) {
-		release_scene(preview_scene);
-	}
+	release_scene(preview_scene);
 	release_scene(current_scene);
 
 	if (!found_match) {
