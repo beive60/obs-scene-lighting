@@ -1,0 +1,92 @@
+name: Release
+
+on:
+    push:
+        tags:
+            - "v*"
+    workflow_dispatch:
+        inputs:
+            tag:
+                description: "Tag to release (e.g. v0.1.0)"
+                required: true
+                type: string
+
+permissions:
+    contents: write
+
+concurrency:
+    group: release-${{ github.ref }}
+    cancel-in-progress: false
+
+jobs:
+    build-and-release:
+        name: Build and Release
+        runs-on: windows-latest
+        timeout-minutes: 30
+
+        steps:
+            - name: Determine version tag
+              id: version
+              shell: pwsh
+              run: |
+                  if ("${{ github.event_name }}" -eq "workflow_dispatch") {
+                    $tag = "${{ inputs.tag }}"
+                  } else {
+                    $tag = "${{ github.ref_name }}"
+                  }
+                  $version = $tag -replace '^v', ''
+                  "tag=$tag" >> $env:GITHUB_OUTPUT
+                  "version=$version" >> $env:GITHUB_OUTPUT
+
+            - name: Check out repository
+              uses: actions/checkout@v5
+              with:
+                  fetch-depth: 0
+
+            - name: Configure CMake
+              run: cmake --preset windows-x64
+
+            - name: Build plugin
+              run: cmake --build build_x64 --config RelWithDebInfo
+
+            - name: Generate NSIS installer
+              working-directory: build_x64
+              run: cpack -G NSIS -C RelWithDebInfo
+
+            - name: Sign artifacts
+              if: env.SIGN_THUMBPRINT != ''
+              env:
+                  SIGN_THUMBPRINT: ${{ secrets.CODE_SIGN_THUMBPRINT }}
+              shell: pwsh
+              run: |
+                  $dll = "build_x64/install/obs-plugins/64bit/obs-scene-lighting.dll"
+                  $installer = Get-ChildItem -Path build_x64 -Filter "*.exe" |
+                    Where-Object { $_.Name -match "obs-scene-lighting" } |
+                    Select-Object -First 1 -ExpandProperty FullName
+
+                  $filesToSign = @($dll, $installer) | Where-Object { $_ -and (Test-Path $_) }
+
+                  foreach ($file in $filesToSign) {
+                    signtool sign /sha1 $env:SIGN_THUMBPRINT /fd sha256 `
+                      /tr http://timestamp.digicert.com /td sha256 /v $file
+                  }
+
+            - name: Create GitHub Release
+              env:
+                  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+              shell: pwsh
+              run: |
+                  $tag = "${{ steps.version.outputs.tag }}"
+                  $installer = Get-ChildItem -Path build_x64 -Filter "*.exe" |
+                    Where-Object { $_.Name -match "obs-scene-lighting" } |
+                    Select-Object -First 1 -ExpandProperty FullName
+
+                  $assets = @()
+                  if ($installer -and (Test-Path $installer)) {
+                    $assets += $installer
+                  }
+
+                  $ghArgs = @('release', 'create', $tag, '--title', "Release $tag", '--generate-notes')
+                  $ghArgs += $assets
+
+                  gh @ghArgs

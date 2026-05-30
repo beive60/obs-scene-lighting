@@ -9,3 +9,5 @@ dictionaries:
     - project-words
 ignorePaths:
     - 'LICENSE'
+    - 'buildspec.json'
+    - 'CMakePresets.json'
