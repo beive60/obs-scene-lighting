@@ -38,20 +38,23 @@
   When specified, skips the CMake build step. Useful when the plugin is already
   built and only the install step is needed.
 
+.PARAMETER LaunchObs
+  When specified, launches obs64.exe after a successful installation.
+
 .EXAMPLE
-  .\install-portable-obs.ps1
+  .\deploy-to-portable-obs.ps1
   Configures, builds, and installs the plugin using default parameters.
 
 .EXAMPLE
-  .\install-portable-obs.ps1 -SkipConfigure -SkipBuild
+  .\deploy-to-portable-obs.ps1 -SkipConfigure -SkipBuild
   Installs a previously built plugin without re-configuring or re-building.
 
 .EXAMPLE
-  .\install-portable-obs.ps1 -ObsRoot 'D:\OBS\portable' -Configuration 'Debug'
+  .\deploy-to-portable-obs.ps1 -ObsRoot 'D:\OBS\portable' -Configuration 'Debug'
   Builds a Debug configuration and installs into a custom OBS directory.
 
 .EXAMPLE
-  .\install-portable-obs.ps1 -WhatIf
+  .\deploy-to-portable-obs.ps1 -WhatIf
   Shows what actions would be performed without executing them.
 #>
 [CmdletBinding(SupportsShouldProcess)]
@@ -62,7 +65,8 @@ param(
   [string]$Configuration = 'RelWithDebInfo',
   [string]$CMakeExecutable = 'C:\Program Files\CMake\bin\cmake.exe',
   [switch]$SkipConfigure,
-  [switch]$SkipBuild
+  [switch]$SkipBuild,
+  [switch]$LaunchObs
 )
 
 Set-StrictMode -Version Latest
@@ -155,5 +159,15 @@ if ($PSCmdlet.ShouldProcess($resolvedObsRoot, $installDescription)) {
   & $resolvedCMake --install $resolvedBuildDir --config $Configuration --prefix $resolvedObsRoot
   if ($LASTEXITCODE -ne 0) {
     exit $LASTEXITCODE
+  }
+}
+
+# Step 4: Launch OBS Studio if requested.
+if ($LaunchObs) {
+  $launchDescription = "Launch OBS Studio ($obsExecutable)"
+  if ($PSCmdlet.ShouldProcess($obsExecutable, $launchDescription)) {
+    Write-Host "Launching OBS Studio..."
+    $obsWorkingDir = Split-Path $obsExecutable
+    Start-Process -FilePath $obsExecutable -WorkingDirectory $obsWorkingDir
   }
 }

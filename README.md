@@ -53,7 +53,7 @@ cmake --install build_x64 --config RelWithDebInfo `
 configure / build / install を 1 コマンドで流す場合は、補助 script を使えます。
 
 ```powershell
-.\scripts\install-portable-obs.ps1
+.\scripts\deploy-to-portable-obs.ps1
 ```
 
 既定では `windows-x64` preset、`RelWithDebInfo`、`C:\Apps\OBS-Studio\OBS-Studio-32.1.2-Windows-x64` を使います。
