@@ -33,3 +33,5 @@ target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE OBS::libobs OBS::obs-fronten
 target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE src)
 
 set_target_properties_plugin(${CMAKE_PROJECT_NAME} PROPERTIES OUTPUT_NAME ${_name})
+
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/windows/cpack.cmake")

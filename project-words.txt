@@ -11,3 +11,8 @@ lldb
 HLSL
 Anson
 rhysd
+signtool
+NSIS
+cpack
+countersigning
+buildspec
