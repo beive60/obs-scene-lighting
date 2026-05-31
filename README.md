@@ -31,13 +31,9 @@ AviUtl2 スクリプト [aviutl2-scene-lighting](https://github.com/beive60/aviu
 ## ビルド
 
 ```powershell
-$cmake = "C:\Program Files\CMake\bin\cmake.exe"
-
-& $cmake --preset windows-x64
-& $cmake --build --preset windows-x64
+cmake --preset windows-x64
+cmake --build --preset windows-x64
 ```
-
-PowerShell で `"C:\Program Files\CMake\bin\cmake.exe" -S ...` のように実行すると、先頭の引用付きパスが文字列として解釈されて `Unexpected token '-S'` になります。引用付き実行ファイルパスを使う場合は `&` を付けてください。
 
 初回 configure では次を自動実行します。
 
@@ -50,14 +46,14 @@ build 出力の `build_x64/rundir/RelWithDebInfo` には、OBS runtime 互換の
 提供済みの portable OBS へ直接配置する場合は、install prefix を OBS root に向けて install してください。
 
 ```powershell
-& $cmake --install build_x64 --config RelWithDebInfo `
+cmake --install build_x64 --config RelWithDebInfo `
   --prefix "C:\Apps\OBS-Studio\OBS-Studio-32.1.2-Windows-x64"
 ```
 
 configure / build / install を 1 コマンドで流す場合は、補助 script を使えます。
 
 ```powershell
-& .\scripts\install-portable-obs.ps1
+.\scripts\install-portable-obs.ps1
 ```
 
 既定では `windows-x64` preset、`RelWithDebInfo`、`C:\Apps\OBS-Studio\OBS-Studio-32.1.2-Windows-x64` を使います。
