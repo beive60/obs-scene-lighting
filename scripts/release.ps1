@@ -18,6 +18,8 @@
 
 .PARAMETER CertificateThumbprint
   SHA-1 thumbprint of the code-signing certificate in the Windows certificate store.
+  If omitted, signtool automatically selects the best available certificate (/a),
+  which works with USB token certificates.
 
 .PARAMETER TimestampServer
   RFC 3161 timestamp server URL for countersigning.
@@ -63,8 +65,8 @@ if (-not $Version) {
 }
 
 $resolvedBuildDir = Join-Path $repoRoot $BuildDir
-$installerPattern = "obs-scene-lighting-${Version}-windows-x64.exe"
-$dllRelativePath = "obs-plugins/64bit/obs-scene-lighting.dll"
+$installerPattern = "obs-scene-lighting-*-windows-x64.exe"
+$dllRelativePath = "${Configuration}\obs-scene-lighting.dll"
 
 Write-Host "Release: obs-scene-lighting v${Version}" -ForegroundColor Cyan
 Write-Host "Build directory: ${resolvedBuildDir}" -ForegroundColor Gray
@@ -103,14 +105,10 @@ if (-not $SkipBuild) {
 
 $installerPath = Get-ChildItem -Path $resolvedBuildDir -Filter $installerPattern -ErrorAction SilentlyContinue |
   Select-Object -First 1 -ExpandProperty FullName
-$dllPath = Join-Path $resolvedBuildDir "install" $dllRelativePath
+$dllPath = Join-Path $resolvedBuildDir $dllRelativePath
 
 if (-not $SkipSign) {
   Write-Host "`n[2/4] Signing artifacts..." -ForegroundColor Yellow
-
-  if (-not $CertificateThumbprint) {
-    throw "CertificateThumbprint is required for code signing. Use -SkipSign to skip."
-  }
 
   $filesToSign = @()
   if (Test-Path $dllPath) { $filesToSign += $dllPath }
@@ -121,15 +119,11 @@ if (-not $SkipSign) {
   }
 
   foreach ($file in $filesToSign) {
-    $signArgs = @(
-      'sign',
-      '/sha1', $CertificateThumbprint,
-      '/fd', 'sha256',
-      '/tr', $TimestampServer,
-      '/td', 'sha256',
-      '/v',
-      $file
-    )
+    if ($CertificateThumbprint) {
+      $signArgs = @('sign', '/sha1', $CertificateThumbprint, '/fd', 'sha256', '/tr', $TimestampServer, '/td', 'sha256', '/v', $file)
+    } else {
+      $signArgs = @('sign', '/a', '/fd', 'sha256', '/tr', $TimestampServer, '/td', 'sha256', '/v', $file)
+    }
 
     if ($DryRun) {
       Write-Host "  DRY RUN: signtool $($signArgs -join ' ')"
