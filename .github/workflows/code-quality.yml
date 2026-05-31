@@ -34,7 +34,6 @@ jobs:
             docs/**/*.md
 
       - name: Run cspell
-        if: always() # 先行ステップの成否に関わらず実行し、全エラーを網羅する
         uses: streetsidesoftware/cspell-action@v8
         with:
           config: cspell.yml
@@ -47,7 +46,6 @@ jobs:
             .github/workflows/**/*.{yml,yaml}
 
       - name: Lint GitHub Actions workflows
-        if: always()
         uses: docker://rhysd/actionlint:1.7.12
         with:
           args: -color
