@@ -16,3 +16,5 @@ NSIS
 cpack
 countersigning
 buildspec
+MSVC
+rundir
