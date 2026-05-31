@@ -11,17 +11,15 @@
 ## セットアップ
 
 ```powershell
-$cmake = "C:\Program Files\CMake\bin\cmake.exe"
-& $cmake --preset windows-x64
-& $cmake --build --preset windows-x64
-& .\scripts\install-portable-obs.ps1
+cmake --preset windows-x64
+cmake --build --preset windows-x64
+.\scripts\install-portable-obs.ps1
 ```
 
 - 初回 configure で `.deps` 配下に OBS sources / `obs-deps` を取得し、`libobs` を bootstrap します。
 - 公式前提に合わせて Windows は Visual Studio 2022 generator を使います。
 - portable OBS に直接配置する場合は `cmake --install build_x64 --config <Config> --prefix <OBS root>` を使ってください。
 - `scripts/install-portable-obs.ps1` は configure / build / install を 1 コマンドに束ねた補助 script です。
-- PowerShell では、引用付きの実行ファイルパスは `&` を付けて呼び出してください。
 
 ## チェック
 
