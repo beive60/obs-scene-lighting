@@ -1,6 +1,6 @@
 [CmdletBinding(SupportsShouldProcess)]
 param(
-  [string]$ObsRoot = 'C:\Apps\OBS-Studio\OBS-Studio-32.1.2-Windows-x64',
+  [string]$ObsRoot = 'C:\Apps\OBS-Studio',
   [string]$Preset = 'windows-x64',
   [string]$BuildDir = 'build_x64',
   [string]$Configuration = 'RelWithDebInfo',

@@ -817,49 +817,19 @@ update_background_source(filter);
 }
 
 /**
- * Lazily creates graphics resources in the render path.
- */
-static bool ensure_graphics_resources(SceneLightingFilter *filter)
-{
-	if (filter->effect != nullptr && filter->background_render_target != nullptr) {
-		return true;
-	}
-
-	if (filter->effect == nullptr) {
-		const char *effect_file = "scene_lighting.effect";
-		char *effect_path = obs_module_file(effect_file);
-		char *effect_error = nullptr;
-		filter->effect = gs_effect_create_from_file(effect_path, &effect_error);
-		if (filter->effect == nullptr) {
-			blog(LOG_ERROR, "[scene-lighting][resources] failed to load effect from '%s'%s%s",
-				effect_path != nullptr ? effect_path : "<null>",
-				effect_error != nullptr ? ": " : "",
-				effect_error != nullptr ? effect_error : "");
-		}
-		if (effect_error != nullptr) {
-			bfree(effect_error);
-		}
-		bfree(effect_path);
-	}
-
-	if (filter->background_render_target == nullptr) {
-		filter->background_render_target = gs_texrender_create(GS_RGBA, GS_ZS_NONE);
-		if (filter->background_render_target == nullptr) {
-			blog(LOG_ERROR,
-				"[scene-lighting][resources] failed to create background render target");
-		}
-	}
-
-	return filter->effect != nullptr && filter->background_render_target != nullptr;
-}
-
-/**
  * Creates filter state and initializes graphics resources.
  */
 static void *scene_lighting_create(obs_data_t *settings, obs_source_t *source)
 {
 auto *filter = new SceneLightingFilter{};
 filter->source = source;
+
+char *effect_path = obs_module_file("scene_lighting.effect");
+obs_enter_graphics();
+filter->effect = gs_effect_create_from_file(effect_path, nullptr);
+filter->background_render_target = gs_texrender_create(GS_RGBA, GS_ZS_NONE);
+obs_leave_graphics();
+bfree(effect_path);
 
 scene_lighting_update(filter, settings);
 return filter;
@@ -912,7 +882,7 @@ obs_data_set_default_int(settings, kPropSamplingMethod, static_cast<int>(Samplin
  */
 static obs_properties_t *scene_lighting_properties(void *data)
 {
-	UNUSED_PARAMETER(data);
+UNUSED_PARAMETER(data);
 	obs_properties_t *props = obs_properties_create();
 
 	obs_property_t *source_prop = obs_properties_add_list(props, kPropBackgroundSource,
@@ -1013,15 +983,10 @@ auto *filter = static_cast<SceneLightingFilter *>(data);
 
 	obs_source_t *parent = obs_filter_get_parent(filter->source);
 obs_source_t *target = obs_filter_get_target(filter->source);
-if (target == nullptr) {
+if (target == nullptr || filter->effect == nullptr) {
 obs_source_skip_video_filter(filter->source);
 return;
 }
-
-	if (!ensure_graphics_resources(filter)) {
-		obs_source_skip_video_filter(filter->source);
-		return;
-	}
 
 const uint32_t width = obs_source_get_base_width(target);
 const uint32_t height = obs_source_get_base_height(target);
@@ -1079,7 +1044,6 @@ return;
 	}
 
 if (!obs_source_process_filter_begin(filter->source, GS_RGBA, OBS_ALLOW_DIRECT_RENDERING)) {
-obs_source_skip_video_filter(filter->source);
 return;
 }
 
@@ -1087,10 +1051,7 @@ const float intensity = static_cast<float>(filter->intensity_percent) / 100.0F;
 const float edge_threshold = static_cast<float>(filter->edge_threshold) / 255.0F;
 	const float rim_angle_rad = static_cast<float>(filter->rim_angle) * (kPi / 180.0F);
 	const struct vec2 light_dir = {std::cos(rim_angle_rad), -std::sin(rim_angle_rad)};
-	const struct vec2 foreground_texel_size = {1.0F / static_cast<float>(width),
-		1.0F / static_cast<float>(height)};
-	const struct vec2 background_texel_size = {1.0F / static_cast<float>(background_width),
-		1.0F / static_cast<float>(background_height)};
+	const struct vec2 texel_size = {1.0F / static_cast<float>(width), 1.0F / static_cast<float>(height)};
 	struct vec2 background_uv_scale = {1.0F, 1.0F};
 	if (background_source_width != 0 && background_source_height != 0) {
 		background_uv_scale = {static_cast<float>(background_source_width) /
@@ -1115,10 +1076,6 @@ gs_eparam_t *param_tint_color = gs_effect_get_param_by_name(filter->effect, "tin
 	gs_eparam_t *param_sampling_method = gs_effect_get_param_by_name(filter->effect, "sampling_method");
 	gs_eparam_t *param_blur_radius = gs_effect_get_param_by_name(filter->effect, "blur_radius");
 	gs_eparam_t *param_background_available = gs_effect_get_param_by_name(filter->effect, "background_available");
-	gs_eparam_t *param_foreground_texel_size = gs_effect_get_param_by_name(filter->effect,
-		"foreground_texel_size");
-	gs_eparam_t *param_background_texel_size = gs_effect_get_param_by_name(filter->effect,
-		"background_texel_size");
 	gs_eparam_t *param_scene_uv_origin = gs_effect_get_param_by_name(filter->effect, "scene_uv_origin");
 	gs_eparam_t *param_scene_uv_x = gs_effect_get_param_by_name(filter->effect, "scene_uv_x");
 	gs_eparam_t *param_scene_uv_y = gs_effect_get_param_by_name(filter->effect, "scene_uv_y");
@@ -1144,6 +1101,8 @@ gs_eparam_t *param_tint_color = gs_effect_get_param_by_name(filter->effect, "tin
 		"background_box_half_extent");
 	gs_eparam_t *param_background_box_available = gs_effect_get_param_by_name(filter->effect,
 		"background_box_available");
+	gs_eparam_t *param_texel_size = gs_effect_get_param_by_name(filter->effect, "texel_size");
+	gs_eparam_t *param_max_edge_width = gs_effect_get_param_by_name(filter->effect, "max_edge_width");
 
 if (param_background_tex != nullptr) {
 gs_effect_set_texture(param_background_tex, background_texture);
@@ -1182,12 +1141,6 @@ gs_effect_set_float(param_blur_radius, static_cast<float>(filter->blur_radius));
 if (param_background_available != nullptr) {
 gs_effect_set_float(param_background_available, background_texture != nullptr ? 1.0F : 0.0F);
 }
-	if (param_foreground_texel_size != nullptr) {
-		gs_effect_set_vec2(param_foreground_texel_size, &foreground_texel_size);
-	}
-	if (param_background_texel_size != nullptr) {
-		gs_effect_set_vec2(param_background_texel_size, &background_texel_size);
-	}
 	if (param_scene_uv_origin != nullptr) {
 		gs_effect_set_vec2(param_scene_uv_origin, &scene_mapping.origin);
 	}
@@ -1230,6 +1183,12 @@ gs_effect_set_float(param_background_available, background_texture != nullptr ? 
 	}
 	if (param_background_box_available != nullptr) {
 		gs_effect_set_float(param_background_box_available, background_box.available ? 1.0F : 0.0F);
+	}
+	if (param_texel_size != nullptr) {
+		gs_effect_set_vec2(param_texel_size, &texel_size);
+	}
+	if (param_max_edge_width != nullptr) {
+		gs_effect_set_float(param_max_edge_width, kMaxEdgeWidth);
 	}
 
 obs_source_process_filter_end(filter->source, filter->effect, width, height);
