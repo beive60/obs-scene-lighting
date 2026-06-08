@@ -1037,7 +1037,11 @@ return;
 	uint32_t background_height = height;
 	uint32_t background_source_width = 0;
 	uint32_t background_source_height = 0;
+	obs_source_t *background_source = nullptr;
 	if (filter->background_source != nullptr) {
+		background_source = obs_weak_source_get_source(filter->background_source);
+	}
+	if (background_source != nullptr) {
 		obs_source_t *resolved_root_scene = nullptr;
 		try_resolve_scene_uv_mapping(parent, width, height, scene_mapping, &resolved_root_scene);
 		const uint32_t scene_width = scene_mapping.available ? scene_mapping.background_width : width;
@@ -1045,12 +1049,8 @@ return;
 		background_width = scene_width;
 		background_height = scene_height;
 
-		obs_source_t *background_source = nullptr;
 		if (scene_mapping.available) {
-			background_source = obs_weak_source_get_source(filter->background_source);
-			if (background_source != nullptr &&
-			    background_source != (parent != nullptr ? parent : target) &&
-			    resolved_root_scene != nullptr) {
+			if (background_source != (parent != nullptr ? parent : target) && resolved_root_scene != nullptr) {
 				background_source_width = obs_source_get_base_width(background_source);
 				background_source_height = obs_source_get_base_height(background_source);
 				if (background_source_width == 0 || background_source_height == 0) {
@@ -1064,15 +1064,19 @@ return;
 				try_resolve_background_scene_box(resolved_root_scene, background_source, background_box);
 			}
 		}
-		if (background_source != nullptr) {
-			obs_source_release(background_source);
-		}
 		if (resolved_root_scene != nullptr) {
 			obs_source_release(resolved_root_scene);
 		}
 	}
+	if (background_source != nullptr) {
+		obs_source_release(background_source);
+	}
 	gs_texture_t *background_texture =
 		render_background(filter, background_width, background_height, parent != nullptr ? parent : target);
+	if (background_texture == nullptr) {
+		obs_source_skip_video_filter(filter->source);
+		return;
+	}
 
 if (!obs_source_process_filter_begin(filter->source, GS_RGBA, OBS_ALLOW_DIRECT_RENDERING)) {
 obs_source_skip_video_filter(filter->source);
